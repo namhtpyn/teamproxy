@@ -4,15 +4,15 @@ import { CHAT_TYPES, MESSAGE_TYPES, MESSAGE_CONTENT_TYPES } from '#shared/utils/
 import { authed } from '../middleware/auth'
 import { rateLimited } from '../middleware/rate-limit'
 import { createGraphClient } from '../../ms-graph/graph-client'
-import { graphRequest } from '../../ms-graph/client'
+import { graphRequest, graphPaginate } from '../../ms-graph/client'
 import type { GraphChat, GraphChatMessage } from '../../ms-graph/types'
 import { getEventPublisher, liveEventSchema } from '../../utils/event-bus'
 import { getAllowedChats, getAllowedChat } from '../../utils/allowed-chats'
 
 const chatMemberSchema = z.object({
   id: z.string(),
-  displayName: z.string(),
-  userId: z.string(),
+  displayName: z.string().nullable(),
+  userId: z.string().nullable(),
   email: z.string().nullable(),
 })
 
@@ -27,7 +27,7 @@ const previewSchema = z.object({
 
 const chatSchema = z.object({
   id: z.string(),
-  chatType: z.enum(CHAT_TYPES),
+  chatType: z.string(),
   topic: z.string().nullable(),
   webUrl: z.string().nullable(),
   createdDateTime: z.string(),
@@ -46,7 +46,7 @@ const messageSchema = z.object({
   contentType: z.enum(MESSAGE_CONTENT_TYPES),
   content: z.string(),
   createdDateTime: z.string(),
-  sender: z.object({ id: z.string(), displayName: z.string() }).nullable(),
+  sender: z.object({ id: z.string(), displayName: z.string().nullable() }).nullable(),
 })
 
 function mapChat(chat: GraphChat) {
@@ -118,27 +118,31 @@ export const chatsRouter = {
   list: authed
     .output(z.object({ chats: z.array(chatSchema) }))
     .handler(async ({ context: { accessToken } }) => {
-      const client = createGraphClient({ accessToken })
+      const allowed = getAllowedChats()
+      if (allowed.length === 0) return { chats: [] }
+
+      const allowedMap = new Map(allowed.map((r) => [r.chatId, r]))
+      const filter = allowed.map((r) => `'${r.chatId}'`).join(',')
       const results: GraphChat[] = []
-      for await (const batch of client.chats.list({
-        $expand: 'members,lastMessagePreview',
-        $orderby: 'lastMessagePreview/createdDateTime desc',
-        $top: '50',
+      for await (const batch of graphPaginate<GraphChat>({
+        method: 'GET',
+        path: '/me/chats',
+        query: {
+          $expand: 'members,lastMessagePreview',
+          $orderby: 'lastMessagePreview/createdDateTime desc',
+          $filter: `id in (${filter})`,
+          $top: '50',
+        },
+        accessToken,
       })) {
         results.push(...batch)
       }
 
-        const allowed = getAllowedChats()
-      const allowedMap = new Map(allowed.map((r) => [r.chatId, r]))
-
       return {
-        chats: results
-          .map((chat) => {
-            const row = allowedMap.get(chat.id)
-            if (!row) return null
-            return { ...mapChat(chat), canRespond: row.canRespond }
-          })
-          .filter((c): c is NonNullable<typeof c> => c !== null),
+        chats: results.map((chat) => ({
+          ...mapChat(chat),
+          canRespond: allowedMap.get(chat.id)?.canRespond ?? false,
+        })),
       }
     }),
 
