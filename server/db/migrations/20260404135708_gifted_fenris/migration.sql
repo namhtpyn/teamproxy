@@ -1,0 +1,1 @@
+ALTER TABLE `allowed_chats` ADD `can_respond` integer DEFAULT false NOT NULL;
