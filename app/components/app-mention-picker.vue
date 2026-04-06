@@ -22,7 +22,7 @@ const filteredMembers = computed(() => {
   if (!props.query) return props.members
   const q = props.query.toLowerCase()
   return props.members.filter((m) =>
-    m.displayName.toLowerCase().includes(q),
+    (m.displayName).toLowerCase().includes(q),
   )
 })
 

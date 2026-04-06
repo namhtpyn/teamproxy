@@ -1,6 +1,6 @@
 interface ChatLike {
   topic: string | null
-  members: Array<{ userId: string; displayName: string }>
+  members: Array<{ userId: string | null; displayName: string }>
 }
 
 export function stripHtml(html: string): string {

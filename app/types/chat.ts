@@ -3,7 +3,7 @@ import type { MessageContentType, MessageType, SubscriptionStatus } from '#share
 export interface ChatMember {
   id: string
   displayName: string
-  userId: string
+  userId: string | null
   email: string | null
 }
 
@@ -53,4 +53,5 @@ export interface Message {
   createdDateTime: string
   sender: { id: string; displayName: string } | null
   sendFailed?: string
+  eventDetail?: Record<string, unknown> | null
 }

@@ -124,10 +124,10 @@ watch(() => props.chatId, () => {
           />
           <AppMentionPicker
             ref="mentionPickerRef"
-            :members="members.filter(m => m.userId !== props.msUserId)"
+            :members="members.filter((m): m is ChatMember & { userId: string } => m.userId != null && m.userId !== props.msUserId)"
             :query="mentionQuery"
             :visible="mentionVisible"
-            @select="handleMentionSelect"
+            @select="(m) => { if (m.userId) handleMentionSelect(m as ChatMember & { userId: string }) }"
           />
         </div>
         <UButton
