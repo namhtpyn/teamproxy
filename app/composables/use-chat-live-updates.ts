@@ -24,7 +24,7 @@ export function useChatLiveUpdates(options: {
     const msgType = String(msg.messageType ?? 'message') as MessageType
 
     let previewContent = body?.content ?? ''
-    if (msgType === 'systemEventMessage') {
+    if (msg.eventDetail) {
       previewContent = getSystemEventText(msg.eventDetail as Record<string, unknown>) ?? 'System event'
     }
 

@@ -16,7 +16,7 @@ function mapChat(chat: Chat) {
 
   return {
     id: chat.id!,
-    chatType: chat.chatType ?? 'unknownFutureValue' as string,
+    chatType: chat.chatType ?? ('unknownFutureValue' as string),
     topic: chat.topic ?? null,
     webUrl: chat.webUrl ?? null,
     createdDateTime: chat.createdDateTime ?? new Date().toISOString(),
@@ -44,7 +44,10 @@ function mapChat(chat: Chat) {
 
 function mapMessage(msg: ChatMessage) {
   if (msg.eventDetail) {
-    consola.info(`[eventDetail] type=${(msg.eventDetail as Record<string, unknown>)['@odata.type'] ?? 'unknown'}`, JSON.stringify(msg.eventDetail))
+    consola.info(
+      `[eventDetail] type=${(msg.eventDetail as Record<string, unknown>)['@odata.type'] ?? 'unknown'}`,
+      JSON.stringify(msg.eventDetail),
+    )
   }
   return {
     id: msg.id!,
@@ -91,7 +94,7 @@ export const chatsRouter = {
         $expand: 'members,lastMessagePreview',
         $orderby: 'lastMessagePreview/createdDateTime desc',
         $filter: `id in (${filter})`,
-        $top: '50',
+        $top: allowedMap.size.toString(),
       },
       accessToken,
     })) {
@@ -128,23 +131,33 @@ export const chatsRouter = {
         results.push(...batch)
         if (results.length >= input.top) break
       }
-      return { messages: results.slice(0, input.top).map(mapMessage), hasMore: results.length >= input.top }
+      return {
+        messages: results.slice(0, input.top).map(mapMessage),
+        hasMore: results.length >= input.top,
+      }
     }),
 
-  sendMessage: authed.use(rateLimited)
+  sendMessage: authed
+    .use(rateLimited)
     .input(
       z.object({
         chatId: z.string(),
         content: z.string().max(4000),
         replyToId: z.string().optional(),
-        mentions: z.array(z.object({
-          userId: z.string(),
-          displayName: z.string(),
-        })).optional(),
-        image: z.object({
-          contentBytes: z.string().max(5_000_000, 'Image too large (max 3.75MB)'),
-          contentType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
-        }).optional(),
+        mentions: z
+          .array(
+            z.object({
+              userId: z.string(),
+              displayName: z.string(),
+            }),
+          )
+          .optional(),
+        image: z
+          .object({
+            contentBytes: z.string().max(5_000_000, 'Image too large (max 3.75MB)'),
+            contentType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
+          })
+          .optional(),
       }),
     )
     .handler(async ({ input, context: { accessToken } }) => {
@@ -177,53 +190,72 @@ export const chatsRouter = {
         contentType = 'html'
         if (hasMentions) {
           for (const mention of mentions) {
-            content = content.replace(`@${mention.mentionText}`, `<at id="${mention.id}">${mention.mentionText}</at>`)
+            content = content.replace(
+              `@${mention.mentionText}`,
+              `<at id="${mention.id}">${mention.mentionText}</at>`,
+            )
           }
         }
         if (hasImage) {
-          content = `<img src="../hostedContents/1/$value" width="400">` + (content ? `<p>${content}</p>` : '')
+          content =
+            `<img src="../hostedContents/1/$value" width="400">` +
+            (content ? `<p>${content}</p>` : '')
         }
       }
 
       const hostedContents = hasImage
-        ? [{ temporaryId: '1', contentBytes: input.image!.contentBytes, contentType: input.image!.contentType }]
+        ? [
+            {
+              temporaryId: '1',
+              contentBytes: input.image!.contentBytes,
+              contentType: input.image!.contentType,
+            },
+          ]
         : undefined
 
-      const response = await client.chats.send(input.chatId, { contentType, content }, input.replyToId, mentions, hostedContents)
+      const response = await client.chats.send(
+        input.chatId,
+        { contentType, content },
+        input.replyToId,
+        mentions,
+        hostedContents,
+      )
 
       return { message: mapMessage(response as ChatMessage) }
     }),
 
-  liveAllMessages: authed
-    .output(eventIterator(liveEventSchema))
-    .handler(async function* ({ context, signal, lastEventId }) {
-      const publisher = getEventPublisher()
+  liveAllMessages: authed.output(eventIterator(liveEventSchema)).handler(async function* ({
+    context,
+    signal,
+    lastEventId,
+  }) {
+    const publisher = getEventPublisher()
 
-      let allowedChatIds: Set<string> | null = null
-      if (context.role !== 'admin') {
+    let allowedChatIds: Set<string> | null = null
+    if (context.role !== 'admin') {
       const allowed = getAllowedChats()
-        allowedChatIds = new Set(allowed.map((r) => r.chatId))
-      }
+      allowedChatIds = new Set(allowed.map((r) => r.chatId))
+    }
 
-      try {
-        for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {
-          if (payload.type === 'visibility' || payload.type === 'respond') {
-            const meta = getEventMeta(payload)
-            yield meta ? withEventMeta(payload, meta) : payload
-            if (payload.type === 'visibility' && allowedChatIds && payload.chatId) {
-              const data = payload.data as { allowed?: boolean }
-              if (data?.allowed) allowedChatIds.add(payload.chatId)
-              else allowedChatIds.delete(payload.chatId)
-            }
-            continue
+    try {
+      for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {
+        if (payload.type === 'visibility' || payload.type === 'respond') {
+          const meta = getEventMeta(payload)
+          yield meta ? withEventMeta(payload, meta) : payload
+          if (payload.type === 'visibility' && allowedChatIds && payload.chatId) {
+            const data = payload.data as { allowed?: boolean }
+            if (data?.allowed) allowedChatIds.add(payload.chatId)
+            else allowedChatIds.delete(payload.chatId)
           }
-
-          if (allowedChatIds && payload.chatId && !allowedChatIds.has(payload.chatId)) continue
-          const msgMeta = getEventMeta(payload)
-          yield msgMeta ? withEventMeta(payload, msgMeta) : payload
+          continue
         }
-      } finally {
-        consola.info('[liveAllMessages] SSE stream closed')
+
+        if (allowedChatIds && payload.chatId && !allowedChatIds.has(payload.chatId)) continue
+        const msgMeta = getEventMeta(payload)
+        yield msgMeta ? withEventMeta(payload, msgMeta) : payload
       }
-    }),
+    } finally {
+      consola.info('[liveAllMessages] SSE stream closed')
+    }
+  }),
 }

@@ -8,7 +8,7 @@ const props = defineProps<{
 
 const isOwn = computed(() => !!props.msUserId && props.msg.sender?.id === props.msUserId)
 const isSending = computed(() => props.msg.id.startsWith('temp:') && !props.msg.sendFailed)
-const isSystemEvent = computed(() => props.msg.messageType === 'systemEventMessage')
+const isSystemEvent = computed(() => !!props.msg.eventDetail)
 const systemEventText = computed(() => getSystemEventText(props.msg.eventDetail))
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'

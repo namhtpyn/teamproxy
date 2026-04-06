@@ -14,6 +14,25 @@ function getMembers(detail: EventDetail): string {
   return members.map(m => m.displayName ?? 'Unknown').join(', ')
 }
 
+function formatIsoDuration(iso: string): string {
+  // PT13M51S → 13m 51s, PT1H11M16S → 1h 11m 16s, PT57M47.3683704S → 57m 47s
+  const m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/)
+  if (!m) return iso
+  const parts: string[] = []
+  if (m[1]) parts.push(`${m[1]}h`)
+  if (m[2]) parts.push(`${m[2]}m`)
+  if (m[3]) parts.push(`${Math.round(Number(m[3]))}s`)
+  return parts.join(' ') || iso
+}
+
+function getCallParticipantNames(detail: EventDetail): string[] {
+  const participants = detail.callParticipants as Array<{ participant?: { user?: { displayName?: string | null; application?: { applicationIdentityType?: string | null } } | null } }> | undefined
+  if (!participants?.length) return []
+  return participants
+    .map(p => p.participant?.user?.displayName)
+    .filter((name): name is string => !!name && name.length > 0)
+}
+
 export function getSystemEventText(eventDetail: Record<string, unknown> | null | undefined): string | null {
   if (!eventDetail) return null
 
@@ -40,16 +59,31 @@ export function getSystemEventText(eventDetail: Record<string, unknown> | null |
       return `${who} renamed the chat to "${detail.chatDisplayName ?? 'untitled'}"`
     case 'channelRenamedEventMessageDetail':
       return `${who} renamed the channel to "${(detail as Record<string, unknown>).channelDisplayName ?? 'untitled'}"`
-    case 'callStartedEventMessageDetail':
-      return `${who} started a call`
-    case 'callEndedEventMessageDetail': {
-      const duration = (detail as Record<string, unknown>).callDuration as string | undefined
-      return duration ? `Call ended (${duration})` : 'Call ended'
+    case 'callStartedEventMessageDetail': {
+      const eventType = detail.callEventType as string | undefined
+      return eventType === 'meeting' ? `${who} started a meeting` : `${who} started a call`
     }
-    case 'callRecordingEventMessageDetail':
-      return `Call recording available`
+    case 'callEndedEventMessageDetail': {
+      const duration = detail.callDuration as string | undefined
+      const participants = getCallParticipantNames(detail)
+      const durationStr = duration ? ` — ${formatIsoDuration(duration)}` : ''
+      const participantStr = participants.length > 0
+        ? ` (${participants.join(', ')})`
+        : ''
+      return `Call ended${participantStr}${durationStr}`
+    }
+    case 'callRecordingEventMessageDetail': {
+      const status = detail.callRecordingStatus as string | undefined
+      if (status === 'success' && detail.callRecordingUrl) {
+        return 'Call recording available'
+      }
+      if (status === 'chunkFinished' || status === 'initial') {
+        return null
+      }
+      return 'Call recording processing'
+    }
     case 'callTranscriptEventMessageDetail':
-      return `Call transcript available`
+      return 'Call transcript available'
     case 'messagePinnedEventMessageDetail':
       return `${who} pinned a message`
     case 'messageUnpinnedEventMessageDetail':
