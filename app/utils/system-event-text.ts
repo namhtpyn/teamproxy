@@ -25,15 +25,12 @@ function formatIsoDuration(iso: string): string {
   return parts.join(' ') || iso
 }
 
-function getCallParticipantNames(detail: EventDetail): string[] {
-  const participants = detail.callParticipants as Array<{ participant?: { user?: { displayName?: string | null; application?: { applicationIdentityType?: string | null } } | null } }> | undefined
-  if (!participants?.length) return []
-  return participants
-    .map(p => p.participant?.user?.displayName)
-    .filter((name): name is string => !!name && name.length > 0)
+export interface SystemEventInfo {
+  text: string
+  link?: { url: string; label: string }
 }
 
-export function getSystemEventText(eventDetail: Record<string, unknown> | null | undefined): string | null {
+export function getSystemEventInfo(eventDetail: Record<string, unknown> | null | undefined): SystemEventInfo | null {
   if (!eventDetail) return null
 
   const detail = eventDetail as EventDetail
@@ -48,66 +45,70 @@ export function getSystemEventText(eventDetail: Record<string, unknown> | null |
 
   switch (type) {
     case 'membersAddedEventMessageDetail':
-      return `${who} added ${getMembers(detail)}`
+      return { text: `${who} added ${getMembers(detail)}` }
     case 'membersDeletedEventMessageDetail':
-      return `${who} removed ${getMembers(detail)}`
+      return { text: `${who} removed ${getMembers(detail)}` }
     case 'membersJoinedEventMessageDetail':
-      return `${getMembers(detail)} joined`
+      return { text: `${getMembers(detail)} joined` }
     case 'membersLeftEventMessageDetail':
-      return `${getMembers(detail)} left`
+      return { text: `${getMembers(detail)} left` }
     case 'chatRenamedEventMessageDetail':
-      return `${who} renamed the chat to "${detail.chatDisplayName ?? 'untitled'}"`
+      return { text: `${who} renamed the chat to "${detail.chatDisplayName ?? 'untitled'}"` }
     case 'channelRenamedEventMessageDetail':
-      return `${who} renamed the channel to "${(detail as Record<string, unknown>).channelDisplayName ?? 'untitled'}"`
+      return { text: `${who} renamed the channel to "${(detail as Record<string, unknown>).channelDisplayName ?? 'untitled'}"` }
     case 'callStartedEventMessageDetail': {
       const eventType = detail.callEventType as string | undefined
-      return eventType === 'meeting' ? `${who} started a meeting` : `${who} started a call`
+      return { text: eventType === 'meeting' ? 'Meeting started' : `${who} started a call` }
     }
     case 'callEndedEventMessageDetail': {
       const duration = detail.callDuration as string | undefined
-      const participants = getCallParticipantNames(detail)
       const durationStr = duration ? ` — ${formatIsoDuration(duration)}` : ''
-      const participantStr = participants.length > 0
-        ? ` (${participants.join(', ')})`
-        : ''
-      return `Call ended${participantStr}${durationStr}`
+      return { text: `Call ended${durationStr}` }
     }
     case 'callRecordingEventMessageDetail': {
       const status = detail.callRecordingStatus as string | undefined
-      if (status === 'success' && detail.callRecordingUrl) {
-        return 'Call recording available'
+      if (status === 'success' && typeof detail.callRecordingUrl === 'string') {
+        return { text: 'Call recording available', link: { url: detail.callRecordingUrl, label: 'Open recording' } }
       }
-      if (status === 'chunkFinished' || status === 'initial') {
+      if (status === 'initial') {
+        return { text: 'Recording started' }
+      }
+      if (status === 'chunkFinished') {
         return null
       }
-      return 'Call recording processing'
+      return { text: 'Call recording processing' }
     }
     case 'callTranscriptEventMessageDetail':
-      return 'Call transcript available'
+      return { text: 'Call transcript available' }
     case 'messagePinnedEventMessageDetail':
-      return `${who} pinned a message`
+      return { text: `${who} pinned a message` }
     case 'messageUnpinnedEventMessageDetail':
-      return `${who} unpinned a message`
+      return { text: `${who} unpinned a message` }
     case 'channelAddedEventMessageDetail':
-      return `${who} created channel "${(detail as Record<string, unknown>).channelDisplayName ?? 'untitled'}"`
+      return { text: `${who} created channel "${(detail as Record<string, unknown>).channelDisplayName ?? 'untitled'}"` }
     case 'channelDeletedEventMessageDetail':
-      return `${who} deleted channel "${(detail as Record<string, unknown>).channelDisplayName ?? 'untitled'}"`
+      return { text: `${who} deleted channel "${(detail as Record<string, unknown>).channelDisplayName ?? 'untitled'}"` }
     case 'channelDescriptionUpdatedEventMessageDetail':
-      return `${who} updated the channel description`
+      return { text: `${who} updated the channel description` }
     case 'teamRenamedEventMessageDetail':
-      return `${who} renamed the team to "${(detail as Record<string, unknown>).teamDisplayName ?? 'untitled'}"`
+      return { text: `${who} renamed the team to "${(detail as Record<string, unknown>).teamDisplayName ?? 'untitled'}"` }
     case 'teamCreatedEventMessageDetail':
-      return `${who} created the team`
+      return { text: `${who} created the team` }
     case 'teamArchivedEventMessageDetail':
-      return `${who} archived the team`
+      return { text: `${who} archived the team` }
     case 'teamUnarchivedEventMessageDetail':
-      return `${who} unarchived the team`
+      return { text: `${who} unarchived the team` }
     case 'conversationMemberRoleUpdatedEventMessageDetail': {
       const roles = (detail as Record<string, unknown>).conversationMemberRoles as string[] | undefined
-      return `${who} updated member role${roles ? ` to ${roles.join(', ')}` : ''}`
+      return { text: `${who} updated member role${roles ? ` to ${roles.join(', ')}` : ''}` }
     }
     default:
       console.warn('[eventDetail] Unhandled type:', type, JSON.stringify(eventDetail))
-      return 'System event'
+      return { text: 'System event' }
   }
+}
+
+/** @deprecated Use getSystemEventInfo */
+export function getSystemEventText(eventDetail: Record<string, unknown> | null | undefined): string | null {
+  return getSystemEventInfo(eventDetail)?.text ?? null
 }

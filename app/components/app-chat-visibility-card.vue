@@ -178,7 +178,7 @@ onMounted(() => {
 
       <UTable v-else :data="tableData" :columns="columns" sticky class="max-h-80">
         <template #name-cell="{ row }">
-          <div>
+          <div class="min-w-0 break-words">
             <p class="text-sm font-medium text-highlighted">
               {{ row.original.name }}
             </p>

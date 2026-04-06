@@ -9,7 +9,7 @@ const props = defineProps<{
 const isOwn = computed(() => !!props.msUserId && props.msg.sender?.id === props.msUserId)
 const isSending = computed(() => props.msg.id.startsWith('temp:') && !props.msg.sendFailed)
 const isSystemEvent = computed(() => !!props.msg.eventDetail)
-const systemEventText = computed(() => getSystemEventText(props.msg.eventDetail))
+const systemEventInfo = computed(() => getSystemEventInfo(props.msg.eventDetail))
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
 
@@ -43,10 +43,19 @@ function openLightbox(index: number) {
 </script>
 
 <template>
-  <div v-if="isSystemEvent" class="flex justify-center">
-    <p class="rounded-full bg-elevated/50 px-3 py-1 text-xs text-dimmed">
-      {{ systemEventText }}
-    </p>
+  <div v-if="isSystemEvent && systemEventInfo" class="flex justify-center">
+    <div class="flex items-center gap-1.5 rounded-full bg-elevated/50 px-3 py-1 text-xs text-dimmed">
+      <span>{{ formatMessageTime(msg.createdDateTime) }}</span>
+      <span>·</span>
+      <span>{{ systemEventInfo.text }}</span>
+      <a
+        v-if="systemEventInfo.link"
+        :href="systemEventInfo.link.url"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="font-medium text-primary hover:underline"
+      >{{ systemEventInfo.link.label }}</a>
+    </div>
   </div>
 
   <div v-else :class="isOwn ? 'flex justify-end' : 'flex justify-start'">
