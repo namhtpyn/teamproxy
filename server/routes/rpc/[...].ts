@@ -12,7 +12,13 @@ const handler = new RPCHandler(appRouter, {
   plugins: [new SimpleCsrfProtectionHandlerPlugin(), new RequestHeadersPlugin(), new ResponseHeadersPlugin(), new RatelimitHandlerPlugin()],
   interceptors: [
     onError((error) => {
-      if (error instanceof ORPCError) return
+      if (error instanceof ORPCError) {
+        const cause = error.cause as { issues?: unknown[] } | undefined
+        if (cause?.issues) {
+          consola.error('[oRPC] Validation failed:', error.message, JSON.stringify(cause.issues, null, 2))
+        }
+        return
+      }
       if (error instanceof GraphAuthError) {
         throw new ORPCError('UNAUTHORIZED', { message: error.message })
       }
