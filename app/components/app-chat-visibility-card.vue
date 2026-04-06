@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
+import type { ChatType } from '#shared/utils/enums'
 import type { VisibilityChat, VisibilityChatRow } from '~/types/chat'
 
 const { $orpc } = useNuxtApp()
@@ -7,9 +8,11 @@ const toast = useToast()
 
 const chats = ref<VisibilityChat[]>([])
 const loading = ref(false)
+const loadingMore = ref(false)
 const error = ref<string | null>(null)
 const togglingId = ref<string | null>(null)
 const allowedTogglingId = ref<string | null>(null)
+const nextCursor = ref<string | null>(null)
 
 const allowedCount = computed(() => chats.value.filter((c) => c.allowed).length)
 
@@ -27,16 +30,30 @@ const columns: TableColumn<VisibilityChatRow>[] = [
   { id: 'canRespond', header: 'Respond' },
 ]
 
-async function fetchVisibility() {
-  loading.value = true
+async function fetchVisibility(loadMore = false) {
+  if (loadMore) {
+    loadingMore.value = true
+  } else {
+    loading.value = true
+    nextCursor.value = null
+  }
   error.value = null
   try {
-    const result = await $orpc.chatVisibility.getVisibility()
-    chats.value = result.chats
+    const params = loadMore && nextCursor.value
+      ? { cursor: nextCursor.value, limit: 20 }
+      : { limit: 20 }
+    const result = await $orpc.chatVisibility.getVisibility(params)
+    if (loadMore) {
+      chats.value.push(...result.chats)
+    } else {
+      chats.value = result.chats
+    }
+    nextCursor.value = result.nextCursor
   } catch (err: unknown) {
     error.value = getErrorMessage(err, 'Failed to load chat visibility')
   } finally {
     loading.value = false
+    loadingMore.value = false
   }
 }
 
@@ -68,7 +85,7 @@ async function toggleChat(chat: VisibilityChat) {
         allowed: newValue,
         canRespond: newValue ? previousCanRespond : false,
         topic: chat.topic,
-        chatType: chat.chatType,
+        chatType: chat.chatType as ChatType,
       })
       original.subscriptionStatus = result.subscriptionStatus
       if (result.subscriptionError) {
@@ -148,7 +165,7 @@ onMounted(() => {
             </p>
           </div>
         </div>
-        <UButton variant="ghost" size="xs" aria-label="Refresh" :loading="loading" @click="fetchVisibility">
+        <UButton variant="ghost" size="xs" aria-label="Refresh" :loading="loading" @click="fetchVisibility()">
           <UIcon name="i-lucide-refresh-cw" class="h-3 w-3" />
         </UButton>
       </div>
@@ -211,6 +228,18 @@ onMounted(() => {
           />
         </template>
       </UTable>
+
+      <div v-if="nextCursor" class="mt-3 flex justify-center">
+        <UButton
+          variant="outline"
+          size="sm"
+          :loading="loadingMore"
+          :disabled="loading"
+          @click="fetchVisibility(true)"
+        >
+          Load more
+        </UButton>
+      </div>
     </UCard>
   </section>
 </template>
