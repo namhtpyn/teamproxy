@@ -36,6 +36,7 @@ export default defineNuxtConfig({
       '/**': {
         ssr: false,
         headers: {
+          'X-Robots-Tag': 'noindex, nofollow',
           'X-Frame-Options': 'DENY',
           'X-Content-Type-Options': 'nosniff',
           'Referrer-Policy': 'strict-origin-when-cross-origin',
