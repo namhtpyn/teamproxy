@@ -71,6 +71,7 @@
 - Cloudflare Tunnel: `cloudflared tunnel --url http://localhost:3000`; **NEVER kill `tunnel` tmux session**
 - Security headers: `nitro.routeRules` (not `@nuxtjs/security`); `X-XSS-Protection` removed
 - `databaseUrl` validated startup; hardcoded values → `runtimeConfig`
+- DB migrations auto-run on startup inside `server/db/client.ts` via `drizzle-orm/node-sqlite/migrator` — `import.meta.dirname` is `undefined` in Nitro dev build, use `resolve(process.cwd(), 'server/db/migrations')` instead
 - RPC handler: `getRequestURL(event).origin` (NOT runtimeConfig) — never hardcode `webhookBase`
 - Webhook: logs source IP; batch `getMsSubscriptionsByClientStates()` → 403 on unknown
 - DB cleanup: daily 3am (`sessionMaxAgeDays`/`tokenInactiveDays`)

@@ -16,3 +16,4 @@ local.db
 .sisyphus/
 .agents/skills
 .tmp
+local.db

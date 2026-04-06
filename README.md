@@ -1,75 +1,60 @@
-# Nuxt Minimal Starter
+# TeamProxy
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+MS Teams chat proxy. Login → curated chats → read/send messages in real-time.
+
+## Stack
+
+- **Nuxt 4** + **Vue 3** (Composition API, `<script setup>`)
+- **Nuxt UI v4** (Tailwind CSS v4)
+- **oRPC** (type-safe RPC)
+- **Drizzle ORM** (SQLite via `node:sqlite`)
+- **MS Graph API** (OAuth 2.0, webhooks, SSE)
 
 ## Setup
 
-Make sure to install dependencies:
-
 ```bash
-# npm
-npm install
-
-# pnpm
 pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
+cp .env.example .env   # fill in required vars
+pnpm db:migrate
+pnpm dev               # http://localhost:3000
 ```
 
-## Development Server
+### Required env vars
 
-Start the development server on `http://localhost:3000`:
+| Variable | Purpose |
+|---|---|
+| `NUXT_DATABASE_URL` | SQLite path |
+| `NUXT_APP_ADMIN` / `NUXT_APP_USER` | Login credentials |
+| `NUXT_MS_CLIENT_ID` | MS Entra ID app ID |
+| `NUXT_MS_CLIENT_SECRET` | MS Entra ID client secret |
+| `NUXT_MS_TENANT_ID` | MS Entra ID tenant |
+| `NUXT_ENCRYPTION_KEY` | AES-256-GCM key (min 16 chars) |
 
-```bash
-# npm
-npm run dev
+## Scripts
 
-# pnpm
-pnpm dev
+| Command | Description |
+|---|---|
+| `pnpm dev` | Dev server |
+| `pnpm build` | Production build |
+| `pnpm test` | Run tests (Vitest) |
+| `pnpm db:studio` | Drizzle Studio |
+| `pnpm db:generate` | Generate migrations |
+| `pnpm db:migrate` | Run migrations |
+| `pnpm lint` / `pnpm lint:fix` | ESLint |
+| `pnpm format` / `pnpm format:check` | Prettier |
 
-# yarn
-yarn dev
+## Architecture
 
-# bun
-bun run dev
+```
+app/          → Pages, components, composables, layouts
+server/
+  rpc/        → oRPC router, context, middleware, procedures
+  ms-graph/   → Graph API client, token exchange
+  utils/      → Crypto, event bus, webhook helpers
+shared/       → Shared types
 ```
 
-## Production
-
-Build the application for production:
-
-```bash
-# npm
-npm run build
-
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
-bun run build
-```
-
-Locally preview production build:
-
-```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
-```
-
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+- **Auth**: Local session cookie + MS OAuth (admin connects, encrypted tokens in DB)
+- **Real-time**: In-process event bus → SSE to clients
+- **Webhooks**: Per-chat Graph change notifications, 15min renewal cron
+- **Roles**: `admin` (full control) / `user` (allowed chats only)
