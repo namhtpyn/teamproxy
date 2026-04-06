@@ -1,4 +1,4 @@
-import type { ChatType, MessageContentType, MessageType, SubscriptionStatus } from '#shared/utils/enums'
+import type { MessageContentType, MessageType, SubscriptionStatus } from '#shared/utils/enums'
 
 export interface ChatMember {
   id: string
@@ -18,7 +18,7 @@ export interface LastMessagePreview {
 
 export interface Chat {
   id: string
-  chatType: ChatType
+  chatType: string
   topic: string | null
   webUrl: string | null
   createdDateTime: string
@@ -33,7 +33,7 @@ export interface Chat {
 export interface VisibilityChat {
   id: string
   topic: string
-  chatType: ChatType
+  chatType: string
   allowed: boolean
   canRespond: boolean
   members: string[]
