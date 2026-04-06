@@ -1,8 +1,28 @@
 # Agent Instructions
 
-- ALWAYS REMEMBER TO: When you learn something new that's worth remembering, update `MEMORY.md`. Also fix or remove outdated/incorrect entries. Keep it token efficient — terse, no prose.
-- Before starting work, check `MEMORY.md` for prior knowledge — avoid re-discovering known issues.
-- ALWAYS REMEMBER TO: make self `AGENTS.md` evolving, autonomously update it with appropriate instructions.
-- ALWAYS REMEMBER TO: look up and use skills that are relevant for the task before starting work. Load skills via the `skill` tool.
-  - **User-installed skills (PRIORITY)**: `nuxt`, `nuxt-ui`, `orpc-guide`, `playwright-cli`
-  - **Built-in skills**: `agent-browser`, `pnpm`, `vitest`, `vue`, `vue-best-practices`, `vue-testing-best-practices`
+## Startup
+
+1. Read `MEMORY.md` then `LOGIC.md` — avoid re-discovering known issues
+2. Load relevant skills via `skill` tool (registry below)
+3. Check `nuxt.config.ts` when touching server code
+
+## Hard Rules
+
+- **Filenames**: kebab-case only. Overrides Nuxt component conventions.
+- **Type safety**: never `as any`, `@ts-ignore`, `@ts-expect-error`
+- **Commits**: never unless explicitly asked
+- **Tests**: never delete failing tests
+- **Pre-commit hooks**: none (user opted out)
+- **Token efficiency**: MANDATE. All `.md` files must be maximally terse. No prose, no filler, no decorative formatting. Every word must earn its place. When updating any doc, also trim/merge/remove anything that can be compressed.
+
+## Self-Evolution
+
+- `MEMORY.md` — your persistent memory brain. Update when you learn/discover anything worth remembering. Fix/remove stale entries. Optimized for you to grep/search, not for humans.
+- `LOGIC.md` — update when logic changes (features, flows, behavior). Pure text, no code. Optimized for you to grep/search, not for humans.
+- `AGENTS.md` — update with new instructions as project evolves.
+
+## Skills (load via `skill` tool; user-installed > built-in)
+
+**User-installed (priority):** `nuxt` · `nuxt-ui` · `orpc-guide` · `playwright-cli`
+
+**Built-in:** `vue` · `vue-best-practices` (MUST for Vue tasks) · `vueuse-functions` · `vitest` · `vue-testing-best-practices` · `pnpm` · `agent-browser`

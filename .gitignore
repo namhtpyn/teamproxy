@@ -14,5 +14,5 @@ local.db
 *.db-wal
 *.db-shm
 .sisyphus/
-.opencode/
-.agents/
+.agents/skills
+.tmp
