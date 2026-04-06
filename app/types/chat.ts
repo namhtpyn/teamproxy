@@ -23,16 +23,7 @@ export type Chat = GraphChat & { canRespond: boolean }
 /** Optimistic message extension */
 export type OptimisticChatMessage = ChatMessage & { sendFailed?: string }
 
-export interface VisibilityChat {
-  id: string
-  topic: string
-  chatType: string
-  allowed: boolean
-  canRespond: boolean
-  members: string[]
-  subscriptionStatus: SubscriptionStatus
-}
+/** Visibility table row: raw Graph Chat + admin fields */
+export type VisibilityChat = Chat & { allowed: boolean; subscriptionStatus: SubscriptionStatus }
 
-export interface VisibilityChatRow extends VisibilityChat {
-  name: string
-}
+export type VisibilityChatRow = VisibilityChat & { name: string }

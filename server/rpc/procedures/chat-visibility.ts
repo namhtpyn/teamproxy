@@ -3,9 +3,8 @@ import { consola } from 'consola'
 import { ORPCError } from '@orpc/server'
 import { CHAT_TYPES, MS_SUBSCRIPTION_STATUSES } from '#shared/utils/enums'
 import { adminAuthed } from '../middleware/auth'
-import { graphRequest } from '../../ms-graph/client'
-import { createGraphClient } from '../../ms-graph/graph-client'
-import type { Chat, GraphPaginationResponse } from '../../ms-graph/types'
+import { createGraphClient, type ODataQueryParams } from '../../ms-graph/graph-client'
+import type { Chat } from '../../ms-graph/types'
 import { clearMsSubscription } from '../../utils/ms-subscription-store'
 import { getMsSubscriptionStatus } from '../../utils/ms-subscription-status'
 import { getEventPublisher } from '../../utils/event-bus'
@@ -17,60 +16,58 @@ import { eq } from 'drizzle-orm'
 
 export const chatVisibilityRouter = {
   getVisibility: adminAuthed
-    .input(z.object({
-      cursor: z.string().optional(),
-      limit: z.number().int().min(1).max(100).default(20),
-    }))
+    .input(
+      z.object({
+        cursor: z.string().optional(),
+        limit: z.number().int().min(1).max(100).default(20),
+      }),
+    )
     .handler(async ({ input, context: { accessToken } }) => {
-      let page: GraphPaginationResponse<Chat>
-
-      if (input.cursor) {
-        const response = await fetch(input.cursor, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          signal: AbortSignal.timeout(30_000),
-        })
-        if (!response.ok) {
-          throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to fetch chats page' })
-        }
-        page = await response.json() as GraphPaginationResponse<Chat>
-      } else {
-        const result = await graphRequest<GraphPaginationResponse<Chat>>({
-          method: 'GET',
-          path: '/me/chats',
-          query: { $expand: 'members', $top: String(input.limit) },
-          accessToken,
-        })
-        if (!result) {
-          throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to fetch chats' })
-        }
-        page = result
+      const client = createGraphClient({ accessToken })
+      const limit = input.limit
+      const query: ODataQueryParams = {
+        $expand: 'members',
+        $top: limit + 1,
       }
+      if (input.cursor) {
+        query.$filter = `createdDateTime lt ${input.cursor}`
+      }
+
+      const allChats = await client.chats.list(query)
+      const hasMore = allChats.length > limit
+      const page = allChats.slice(0, limit)
+      const nextCursor =
+        hasMore && page.length > 0
+          ? (page[page.length - 1]!.createdDateTime ?? undefined)
+          : undefined
 
       const rows = db.query.allowedChats.findMany().sync()
       const rowMap = new Map(rows.map((r) => [r.chatId, r]))
 
       return {
-        chats: page.value.map((c) => {
+        chats: page.map((c: Chat) => {
           const row = rowMap.get(c.id!)
           return {
-            id: c.id!,
-            topic: c.topic ?? '',
-            chatType: c.chatType ?? 'unknownFutureValue' as string,
+            ...c,
             allowed: row?.allowed ?? false,
             canRespond: row?.canRespond ?? false,
-            members: (c.members ?? []).map((m) => m.displayName).filter((n): n is string => !!n),
             subscriptionStatus: getMsSubscriptionStatus(row),
           }
         }),
-        nextCursor: page['@odata.nextLink'] ?? null,
+        nextCursor,
       }
     }),
 
   setVisibility: adminAuthed
-    .input(z.object({ chatId: z.string(), allowed: z.boolean(), canRespond: z.boolean(), topic: z.string(), chatType: z.enum(CHAT_TYPES) }))
+    .input(
+      z.object({
+        chatId: z.string(),
+        allowed: z.boolean(),
+        canRespond: z.boolean(),
+        topic: z.string(),
+        chatType: z.enum(CHAT_TYPES),
+      }),
+    )
     .handler(async ({ input, context: { accessToken } }) => {
       const existing = getAllowedChat(input.chatId)
 
@@ -79,7 +76,12 @@ export const chatVisibilityRouter = {
 
       if (existing) {
         db.update(allowedChats)
-          .set({ allowed: input.allowed, canRespond: input.canRespond, topic: input.topic, chatType: input.chatType })
+          .set({
+            allowed: input.allowed,
+            canRespond: input.canRespond,
+            topic: input.topic,
+            chatType: input.chatType,
+          })
           .where(eq(allowedChats.chatId, input.chatId))
           .run()
         if (!input.allowed && existing.msSubscriptionId) {
@@ -87,7 +89,10 @@ export const chatVisibilityRouter = {
           try {
             await client.subscriptions.delete(existing.msSubscriptionId)
           } catch (err) {
-            consola.warn(`Failed to delete Graph subscription ${existing.msSubscriptionId} for chat ${input.chatId}:`, err)
+            consola.warn(
+              `Failed to delete Graph subscription ${existing.msSubscriptionId} for chat ${input.chatId}:`,
+              err,
+            )
           }
           clearMsSubscription(input.chatId)
           subscriptionStatus = 'none'
@@ -99,13 +104,15 @@ export const chatVisibilityRouter = {
           subscriptionStatus = getMsSubscriptionStatus(existing)
         }
       } else {
-        db.insert(allowedChats).values({
-          chatId: input.chatId,
-          topic: input.topic,
-          chatType: input.chatType,
-          allowed: input.allowed,
-          canRespond: input.canRespond,
-        }).run()
+        db.insert(allowedChats)
+          .values({
+            chatId: input.chatId,
+            topic: input.topic,
+            chatType: input.chatType,
+            allowed: input.allowed,
+            canRespond: input.canRespond,
+          })
+          .run()
         if (input.allowed) {
           const result = await createMsSubscription(input.chatId, accessToken)
           subscriptionStatus = result.success ? 'active' : 'none'
@@ -114,7 +121,11 @@ export const chatVisibilityRouter = {
       }
 
       const publisher = getEventPublisher()
-      publisher.publish('chat:*', { type: 'visibility' as const, chatId: input.chatId, data: { allowed: input.allowed } })
+      publisher.publish('chat:*', {
+        type: 'visibility' as const,
+        chatId: input.chatId,
+        data: { allowed: input.allowed },
+      })
 
       return { success: true, subscriptionStatus, subscriptionError }
     }),
@@ -134,10 +145,12 @@ export const chatVisibilityRouter = {
         .run()
 
       const publisher = getEventPublisher()
-      publisher.publish('chat:*', { type: 'respond' as const, chatId: input.chatId, data: { canRespond: input.canRespond } })
+      publisher.publish('chat:*', {
+        type: 'respond' as const,
+        chatId: input.chatId,
+        data: { canRespond: input.canRespond },
+      })
 
       return { success: true }
     }),
 }
-
-

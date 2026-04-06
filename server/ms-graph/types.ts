@@ -54,11 +54,6 @@ export interface GraphRequestOptions {
   accessToken: string
 }
 
-export interface GraphPaginationResponse<T> {
-  value: T[]
-  '@odata.nextLink'?: string
-}
-
 export interface ODataError {
   error: {
     code: string

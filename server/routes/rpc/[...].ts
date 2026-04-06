@@ -6,7 +6,7 @@ import { consola } from 'consola'
 import { appRouter } from '../../rpc/router'
 import { db } from '../../db/client'
 import { resolveSession } from '../../utils/session-store'
-import { GraphAPIError, GraphAuthError } from '../../ms-graph/client'
+import { GraphAPIError, GraphAuthError } from '../../ms-graph/graph-client'
 
 const handler = new RPCHandler(appRouter, {
   plugins: [new SimpleCsrfProtectionHandlerPlugin(), new RequestHeadersPlugin(), new ResponseHeadersPlugin(), new RatelimitHandlerPlugin()],

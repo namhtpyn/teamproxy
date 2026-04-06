@@ -2,6 +2,7 @@
 import type { TableColumn } from '@nuxt/ui'
 import type { ChatType } from '#shared/utils/enums'
 import type { VisibilityChat, VisibilityChatRow } from '~/types/chat'
+import { getChatMembers, getChatTopic, getChatType } from '~/utils/graph-helpers'
 
 const { $orpc } = useNuxtApp()
 const toast = useToast()
@@ -12,7 +13,7 @@ const loadingMore = ref(false)
 const error = ref<string | null>(null)
 const togglingId = ref<string | null>(null)
 const allowedTogglingId = ref<string | null>(null)
-const nextCursor = ref<string | null>(null)
+const nextCursor = ref<string | undefined>(undefined)
 
 const allowedCount = computed(() => chats.value.filter((c) => c.allowed).length)
 
@@ -35,7 +36,7 @@ async function fetchVisibility(loadMore = false) {
     loadingMore.value = true
   } else {
     loading.value = true
-    nextCursor.value = null
+    nextCursor.value = undefined
   }
   error.value = null
   try {
@@ -69,23 +70,24 @@ async function optimisticToggle<T>(currentValue: T, newValue: T, updateFn: () =>
 }
 
 async function toggleChat(chat: VisibilityChat) {
-  const original = chats.value.find(c => c.id === chat.id)
+  const chatId = chat.id!
+  const original = chats.value.find(c => c.id === chatId)
   if (!original) return
   const newValue = !original.allowed
   const previousCanRespond = original.canRespond
   if (!newValue) original.canRespond = false
-  allowedTogglingId.value = chat.id
+  allowedTogglingId.value = chatId
 
   await optimisticToggle(
     original.allowed,
     newValue,
     async () => {
       const result = await $orpc.chatVisibility.setVisibility({
-        chatId: chat.id,
+        chatId,
         allowed: newValue,
         canRespond: newValue ? previousCanRespond : false,
-        topic: chat.topic,
-        chatType: chat.chatType as ChatType,
+        topic: chat.topic ?? '',
+        chatType: getChatType(chat) as ChatType,
       })
       original.subscriptionStatus = result.subscriptionStatus
       if (result.subscriptionError) {
@@ -107,16 +109,17 @@ async function toggleChat(chat: VisibilityChat) {
 }
 
 async function toggleRespond(chat: VisibilityChat) {
-  const original = chats.value.find(c => c.id === chat.id)
+  const chatId = chat.id!
+  const original = chats.value.find(c => c.id === chatId)
   if (!original) return
   const newValue = !original.canRespond
-  togglingId.value = chat.id
+  togglingId.value = chatId
 
   await optimisticToggle(
     original.canRespond,
     newValue,
     () => $orpc.chatVisibility.setCanRespond({
-      chatId: chat.id,
+      chatId,
       canRespond: newValue,
     }),
     (val) => { original.canRespond = val },
@@ -126,8 +129,10 @@ async function toggleRespond(chat: VisibilityChat) {
 }
 
 function chatDisplayName(chat: VisibilityChat): string {
-  if (chat.topic) return chat.topic
-  if (chat.members.length > 0) return chat.members[0]!
+  const topic = getChatTopic(chat)
+  if (topic) return topic
+  const members = getChatMembers(chat)
+  if (members.length > 0) return members[0]!.displayName
   return 'Unnamed chat'
 }
 
@@ -183,7 +188,7 @@ onMounted(() => {
               {{ row.original.name }}
             </p>
             <p class="text-xs text-dimmed">
-              {{ chatTypeLabel(row.original.chatType) }}
+              {{ chatTypeLabel(getChatType(row.original)) }}
             </p>
           </div>
         </template>

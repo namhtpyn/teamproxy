@@ -1,4 +1,7 @@
-import { graphRequest, graphPaginate, GraphAPIError } from './client'
+import { graphRequest, GraphAPIError, GRAPH_BASE } from './client'
+export { GraphAPIError } from './client'
+export { GraphAuthError } from './client'
+export { GRAPH_BASE } from './client'
 import type { Chat, ChatMessage, Channel, Team, Subscription } from './types'
 
 export interface GraphClientOptions {
@@ -28,22 +31,34 @@ export interface RenewSubscriptionParams {
 
 export function createGraphClient({ accessToken }: GraphClientOptions) {
   return {
+    async getMe(): Promise<{ id: string; displayName: string }> {
+      const me = await graphRequest<{ id: string; displayName: string }>({
+        method: 'GET',
+        path: '/me',
+        query: { $select: 'id,displayName' },
+        accessToken,
+      })
+      if (!me) throw new GraphAPIError(500, 'no_response', 'Empty response fetching user profile')
+      return me
+    },
     chats: {
-      list(params?: ODataQueryParams): AsyncGenerator<Chat[]> {
-        return graphPaginate<Chat>({
+      async list(params?: ODataQueryParams): Promise<Chat[]> {
+        const data = await graphRequest<{ value: Chat[] }>({
           method: 'GET',
           path: '/me/chats',
           query: params as Record<string, string>,
           accessToken,
         })
+        return data?.value ?? []
       },
-      messages(chatId: string, params?: ODataQueryParams): AsyncGenerator<ChatMessage[]> {
-        return graphPaginate<ChatMessage>({
+      async messages(chatId: string, params?: ODataQueryParams): Promise<ChatMessage[]> {
+        const data = await graphRequest<{ value: ChatMessage[] }>({
           method: 'GET',
           path: `/chats/${chatId}/messages`,
           query: params as Record<string, string>,
           accessToken,
         })
+        return data?.value ?? []
       },
       send(chatId: string, body: { contentType: string; content: string }, replyToId?: string, mentions?: Array<{
         id: number
@@ -96,21 +111,24 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
         return data?.value ?? []
       },
       channels: {
-        list(teamId: string): AsyncGenerator<Channel[]> {
-          return graphPaginate<Channel>({
+        async list(teamId: string, params?: ODataQueryParams): Promise<Channel[]> {
+          const data = await graphRequest<{ value: Channel[] }>({
             method: 'GET',
             path: `/teams/${teamId}/channels`,
+            query: params as Record<string, string>,
             accessToken,
           })
+          return data?.value ?? []
         },
         messages: {
-          list(teamId: string, channelId: string, params?: ODataQueryParams): AsyncGenerator<ChatMessage[]> {
-            return graphPaginate<ChatMessage>({
+          async list(teamId: string, channelId: string, params?: ODataQueryParams): Promise<ChatMessage[]> {
+            const data = await graphRequest<{ value: ChatMessage[] }>({
               method: 'GET',
               path: `/teams/${teamId}/channels/${channelId}/messages`,
               query: params as Record<string, string>,
               accessToken,
             })
+            return data?.value ?? []
           },
         },
       },

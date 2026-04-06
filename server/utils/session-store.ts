@@ -2,7 +2,6 @@ import { db } from '../db/client'
 import { sessions } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import type { UserRole } from '#shared/utils/enums'
-export type { UserRole } from '#shared/utils/enums'
 
 export function createSession(username: string, role: UserRole): string {
   const token = crypto.randomUUID()

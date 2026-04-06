@@ -1,4 +1,4 @@
-import type { GraphRequestOptions, GraphPaginationResponse, ODataError } from './types'
+import type { GraphRequestOptions, ODataError } from './types'
 
 export const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
 const MAX_RETRIES = 3
@@ -96,38 +96,6 @@ export async function graphRequest<T>(options: GraphRequestOptions): Promise<T |
   }
 
   return undefined
-}
-
-export async function* graphPaginate<T>(
-  options: Omit<GraphRequestOptions, 'body'>,
-): AsyncGenerator<T[]> {
-  let url = `${GRAPH_BASE}${options.path}`
-
-  if (options.query && Object.keys(options.query).length > 0) {
-    const params = new URLSearchParams(options.query)
-    url += `?${params.toString()}`
-  }
-
-  while (url) {
-    const successResponse = await withRetry(async () => {
-      const response = await fetch(url, {
-        method: options.method,
-        headers: {
-          Authorization: `Bearer ${options.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      })
-      return { response, result: await handleGraphResponse(response) }
-    })
-
-    const data = (await successResponse.json()) as GraphPaginationResponse<T>
-    if (data.value && data.value.length > 0) {
-      yield data.value
-    }
-
-    url = data['@odata.nextLink'] ?? ''
-  }
 }
 
 async function withRetry(

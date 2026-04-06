@@ -1,7 +1,7 @@
 import { defineEventHandler, getQuery, createError, setHeader, sendStream, getRequestIP } from 'h3'
 import { getActiveToken } from '../../db/get-active-token'
 import { db } from '../../db/client'
-import { GRAPH_BASE } from '../../ms-graph/client'
+import { GRAPH_BASE } from '../../ms-graph/graph-client'
 import { rateLimit } from '../../utils/rate-limit'
 
 export default defineEventHandler(async (event) => {

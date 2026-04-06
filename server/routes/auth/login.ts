@@ -1,6 +1,7 @@
 import { defineEventHandler, readBody, setCookie, deleteCookie, getCookie, createError, getRequestIP } from 'h3'
 import { timingSafeEqual } from 'node:crypto'
-import { createSession, deleteSession, type UserRole } from '../../utils/session-store'
+import { createSession, deleteSession } from '../../utils/session-store'
+import type { UserRole } from '#shared/utils/enums'
 import { rateLimit } from '../../utils/rate-limit'
 
 function safeEqual(a: string, b: string): boolean {

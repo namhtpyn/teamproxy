@@ -3,23 +3,15 @@ import { ORPCError, eventIterator, getEventMeta, withEventMeta } from '@orpc/ser
 import { consola } from 'consola'
 import { authed } from '../middleware/auth'
 import { rateLimited } from '../middleware/rate-limit'
-import { createGraphClient } from '../../ms-graph/graph-client'
-import { graphRequest, graphPaginate } from '../../ms-graph/client'
+import { createGraphClient, type ODataQueryParams } from '../../ms-graph/graph-client'
 import type { Chat, ChatMessage } from '../../ms-graph/types'
 import { getEventPublisher, liveEventSchema } from '../../utils/event-bus'
 import { getAllowedChats, getAllowedChat } from '../../utils/allowed-chats'
 
 export const chatsRouter = {
   getMe: authed.handler(async ({ context: { accessToken } }) => {
-    const me = await graphRequest<{ id: string; displayName: string }>({
-      method: 'GET',
-      path: '/me',
-      query: { $select: 'id,displayName' },
-      accessToken,
-    })
-    if (!me) {
-      throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to fetch user profile' })
-    }
+    const client = createGraphClient({ accessToken })
+    const me = await client.getMe()
     return { id: me.id, displayName: me.displayName }
   }),
 
@@ -29,20 +21,12 @@ export const chatsRouter = {
 
     const allowedMap = new Map(allowed.map((r) => [r.chatId, r]))
     const filter = allowed.map((r) => `'${r.chatId}'`).join(',')
-    const results: Chat[] = []
-    for await (const batch of graphPaginate<Chat>({
-      method: 'GET',
-      path: '/me/chats',
-      query: {
-        $expand: 'members,lastMessagePreview',
-        $orderby: 'lastMessagePreview/createdDateTime desc',
-        $filter: `id in (${filter})`,
-        $top: allowedMap.size.toString(),
-      },
-      accessToken,
-    })) {
-      results.push(...batch)
-    }
+    const client = createGraphClient({ accessToken })
+    const results = await client.chats.list({
+      $expand: 'members,lastMessagePreview',
+      $orderby: 'lastMessagePreview/createdDateTime desc',
+      $filter: `id in (${filter})`,
+    })
 
     return {
       chats: results.map((chat) => ({
@@ -62,18 +46,14 @@ export const chatsRouter = {
     )
     .handler(async ({ input, context: { accessToken } }) => {
       const client = createGraphClient({ accessToken })
-      const query: Record<string, string> = {
-        $top: String(input.top + 1),
+      const query: ODataQueryParams = {
+        $top: input.top + 1,
         $orderby: 'createdDateTime desc',
       }
       if (input.before) {
         query.$filter = `createdDateTime lt ${input.before}`
       }
-      const results: ChatMessage[] = []
-      for await (const batch of client.chats.messages(input.chatId, query)) {
-        results.push(...batch)
-        if (results.length >= input.top) break
-      }
+      const results = await client.chats.messages(input.chatId, query)
       return {
         messages: results.slice(0, input.top),
         hasMore: results.length >= input.top,
