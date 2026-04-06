@@ -36,7 +36,6 @@ pnpm dev               # http://localhost:3000
 |---|---|
 | `pnpm dev` | Dev server |
 | `pnpm build` | Production build |
-| `pnpm test` | Run tests (Vitest) |
 | `pnpm db:studio` | Drizzle Studio |
 | `pnpm db:generate` | Generate migrations |
 | `pnpm db:migrate` | Run migrations |
