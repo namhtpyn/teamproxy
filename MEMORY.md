@@ -31,7 +31,7 @@
 ## MS Graph
 
 - Types from `@microsoft/microsoft-graph-types` — re-exported in `server/ms-graph/types.ts`. No hand-rolled Graph types.
-- Official types use `NullableOption<T>` (all fields optional+nullable). Use `!` assertion in mappers for fields guaranteed by API.
+- Official types use `NullableOption<T>` (all fields optional+nullable). Use `!` assertion for fields guaranteed by API. Raw Graph types returned to frontend (no mappers).
 - Chat perms: admin consent for enterprise Entra ID; scope mismatch → `invalid_grant` (refresh must match auth scopes)
 - Webhook subs: max 1hr, set 55min; automated cron `*/15` (`ensureMsSubscriptions()` = renew + create)
 - `ensureMsSubscriptions()` in `server/utils/ensure-ms-subscriptions.ts`; `createMsSubscription()` reads cached origin
@@ -40,7 +40,7 @@
 - Token endpoint: `login.microsoftonline.com/{tenantId}/oauth2/v2.0/token`
 - `graphRequest` used in `chats.ts` `getMe` — do NOT remove; token exchange: `server/ms-graph/token-exchange.ts`
 - OData `before` filter: `replace(/'/g, "''")`, NO `encodeURIComponent`
-- System events: `eventDetail` logged server-side in `mapMessage()`, unknown types logged client-side in `getSystemEventText()`
+- System events: `eventDetail` logged server-side in webhook handler (`graph.ts`), unknown types logged client-side in `getSystemEventText()`
 
 ## Security & Auth
 

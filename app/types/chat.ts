@@ -1,3 +1,4 @@
+import type { Chat as GraphChat, ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { MessageContentType, MessageType, SubscriptionStatus } from '#shared/utils/enums'
 
 export interface ChatMember {
@@ -16,19 +17,11 @@ export interface LastMessagePreview {
   senderDisplayName: string | null
 }
 
-export interface Chat {
-  id: string
-  chatType: string
-  topic: string | null
-  webUrl: string | null
-  createdDateTime: string
-  lastUpdatedDateTime: string
-  isHidden: boolean
-  lastMessageReadDateTime: string | null
-  members: ChatMember[]
-  lastMessagePreview: LastMessagePreview | null
-  canRespond: boolean
-}
+/** Client-side Chat type: raw Graph Chat + canRespond */
+export type Chat = GraphChat & { canRespond: boolean }
+
+/** Optimistic message extension */
+export type OptimisticChatMessage = ChatMessage & { sendFailed?: string }
 
 export interface VisibilityChat {
   id: string
@@ -42,16 +35,4 @@ export interface VisibilityChat {
 
 export interface VisibilityChatRow extends VisibilityChat {
   name: string
-}
-
-export interface Message {
-  id: string
-  replyToId: string | null
-  messageType: MessageType
-  contentType: MessageContentType
-  content: string
-  createdDateTime: string
-  sender: { id: string; displayName: string } | null
-  sendFailed?: string
-  eventDetail?: Record<string, unknown> | null
 }

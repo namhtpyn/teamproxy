@@ -1,0 +1,91 @@
+import type { ChatMessage, ChatMessageInfo, ConversationMember } from '@microsoft/microsoft-graph-types'
+import type { MessageContentType, MessageType } from '#shared/utils/enums'
+import type { Chat, ChatMember, LastMessagePreview } from '~/types/chat'
+
+export function getMessageContent(msg: ChatMessage): string {
+  return msg.body?.content ?? ''
+}
+
+export function getMessageContentType(msg: ChatMessage): string {
+  return msg.body?.contentType ?? 'text'
+}
+
+export function getSender(msg: ChatMessage): { id: string; displayName: string } | null {
+  const user = msg.from?.user
+  if (!user) return null
+  return { id: user.id ?? '', displayName: user.displayName ?? 'Unknown' }
+}
+
+export function getEventDetail(msg: ChatMessage): Record<string, unknown> | null {
+  return msg.eventDetail as Record<string, unknown> | null
+}
+
+export function getChatMembers(chat: Chat): ChatMember[] {
+  return (chat.members ?? []).map((m: ConversationMember) => {
+    const ext = m as ConversationMember & { userId?: string | null; email?: string | null }
+    const userId = typeof ext.userId === 'string' ? ext.userId : null
+    const email = typeof ext.email === 'string' ? ext.email : null
+    return {
+      id: m.id ?? '',
+      displayName: m.displayName ?? 'Unknown',
+      userId,
+      email,
+    }
+  })
+}
+
+export function getChatTopic(chat: Chat): string | null {
+  return chat.topic ?? null
+}
+
+export function getChatType(chat: Chat): string {
+  return chat.chatType ?? 'unknownFutureValue'
+}
+
+export function getLastMessagePreview(chat: Chat): LastMessagePreview | null {
+  const preview = chat.lastMessagePreview
+  if (!preview) return null
+  return {
+    id: preview.id ?? '',
+    createdDateTime: preview.createdDateTime ?? new Date().toISOString(),
+    messageType: (preview.messageType ?? 'message') as MessageType,
+    contentType: (preview.body?.contentType ?? 'text') as MessageContentType,
+    content: preview.body?.content ?? '',
+    senderDisplayName: preview.from?.user?.displayName ?? null,
+  }
+}
+
+export function isChatHidden(chat: Chat): boolean {
+  return chat.viewpoint?.isHidden ?? false
+}
+
+export function getLastMessageReadDateTime(chat: Chat): string | null {
+  return chat.viewpoint?.lastMessageReadDateTime ?? null
+}
+
+export function getLastUpdatedDateTime(chat: Chat): string {
+  return chat.lastUpdatedDateTime ?? new Date().toISOString()
+}
+
+export function setLastMessagePreview(chat: Chat, preview: LastMessagePreview): void {
+  chat.lastMessagePreview = {
+    id: preview.id,
+    createdDateTime: preview.createdDateTime,
+    messageType: preview.messageType,
+    body: { content: preview.content, contentType: preview.contentType },
+    from: preview.senderDisplayName
+      ? { user: { id: '', displayName: preview.senderDisplayName } }
+      : undefined,
+  } as unknown as ChatMessageInfo
+}
+
+export function setLastMessageReadDateTime(chat: Chat, dateTime: string): void {
+  if (!chat.viewpoint) {
+    (chat as unknown as Record<string, unknown>).viewpoint = {
+      isHidden: false,
+      lastMessageReadDateTime: dateTime,
+    }
+  } else {
+    chat.viewpoint.lastMessageReadDateTime = dateTime
+  }
+}

@@ -32,9 +32,9 @@ function goBack() {
 }
 
 function selectChat(chat: Chat) {
-  selectedChatId.value = chat.id
+  selectedChatId.value = chat.id ?? null
   currentChat.value = chat
-  router.replace({ query: { chat: chat.id } })
+  router.replace({ query: { chat: chat.id ?? '' } })
 }
 
 onMounted(() => {

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import type { Chat, Message } from '~/types/chat'
+import type { ChatMessage } from '@microsoft/microsoft-graph-types'
+import type { Chat, OptimisticChatMessage } from '~/types/chat'
+import { getChatMembers, getChatType, getEventDetail, getSender, setLastMessagePreview, setLastMessageReadDateTime } from '~/utils/graph-helpers'
 
 const props = defineProps<{
   chat: Chat | null
@@ -13,7 +15,8 @@ const { $orpc } = useNuxtApp()
 const { user } = useAuth()
 const toast = useToast()
 
-const messages = ref<Message[]>([])
+type MessageItem = ChatMessage | OptimisticChatMessage
+const messages = ref<MessageItem[]>([])
 const messagesLoading = ref(false)
 const messagesError = ref<string | null>(null)
 const hasMore = ref(false)
@@ -26,14 +29,14 @@ const messageListRef = ref<{ scrollToBottom: (force?: boolean) => void; isNearBo
 const sortedMessages = computed(() =>
   [...messages.value].sort(
     (a, b) =>
-      new Date(a.createdDateTime).getTime() -
-      new Date(b.createdDateTime).getTime(),
+      new Date(a.createdDateTime ?? '').getTime() -
+      new Date(b.createdDateTime ?? '').getTime(),
   ),
 )
 
 async function loadMessages() {
   if (!props.chat) return
-  const chatId = props.chat.id
+  const chatId = props.chat.id!
   messages.value = []
   messagesError.value = null
   messagesLoading.value = true
@@ -60,8 +63,8 @@ async function loadMore() {
 
   try {
     const oldest = sortedMessages.value[0]
-    const before = oldest ? oldest.createdDateTime : undefined
-    const result = await $orpc.chats.getMessages({ chatId: props.chat.id, before })
+    const before = oldest?.createdDateTime ?? undefined
+    const result = await $orpc.chats.getMessages({ chatId: props.chat.id!, before })
     messages.value = [...result.messages, ...messages.value]
     hasMore.value = result.hasMore
   } catch (err) {
@@ -92,7 +95,7 @@ watch(
 async function refreshMessages() {
   if (!props.chat) return
   try {
-    const result = await $orpc.chats.getMessages({ chatId: props.chat.id })
+    const result = await $orpc.chats.getMessages({ chatId: props.chat.id! })
     messages.value = result.messages
   } catch (err) {
     toast.add({ title: 'Failed to refresh messages', description: err instanceof Error ? err.message : undefined, color: 'error' })
@@ -101,25 +104,15 @@ async function refreshMessages() {
 
 
 function appendIncomingMessage(raw: Record<string, unknown>) {
-  const body = raw.body as { contentType?: string; content?: string } | undefined
-  const fromUser = raw.from as { user?: { id: string; displayName: string } } | null
-  const msg: Message = {
-    id: String(raw.id ?? ''),
-    replyToId: (raw.replyToId as string) ?? null,
-    messageType: String(raw.messageType ?? 'message') as Message['messageType'],
-    contentType: (body?.contentType ?? 'text') as Message['contentType'],
-    content: body?.content ?? '',
-    createdDateTime: String(raw.createdDateTime ?? ''),
-    sender: fromUser?.user ? { id: fromUser.user.id, displayName: fromUser.user.displayName } : null,
-    eventDetail: (raw.eventDetail as Record<string, unknown>) ?? null,
-  }
+  const msg = raw as ChatMessage
 
-  // If from own user and we have pending optimistic sends, replace the optimistic entry
-  if (msg.sender?.id && msUserId.value && msg.sender.id === msUserId.value && pendingSends.size > 0) {
-    const idx = messages.value.findIndex(m => m.id.startsWith('temp:'))
+  const sender = getSender(msg)
+
+  if (sender?.id && msUserId.value && sender.id === msUserId.value && pendingSends.size > 0) {
+    const idx = messages.value.findIndex(m => m.id?.startsWith('temp:'))
     if (idx !== -1) {
       const tempId = messages.value[idx]!.id
-      pendingSends.delete(tempId)
+      pendingSends.delete(tempId ?? '')
       const updated = [...messages.value]
       updated[idx] = msg
       messages.value = updated
@@ -138,42 +131,39 @@ function handleSubmit(payload: { content: string; image: { contentBytes: string;
   const tempId = `temp:${Date.now()}`
   pendingSends.add(tempId)
 
-  const optimisticMsg: Message = {
+  const optimisticMsg: OptimisticChatMessage = {
     id: tempId,
-    replyToId: null,
     messageType: 'message',
-    contentType: 'text',
-    content: payload.content,
+    body: { content: payload.content, contentType: 'text' },
     createdDateTime: new Date().toISOString(),
-    sender: msUserId.value && user.value
-      ? { id: msUserId.value, displayName: user.value.displayName ?? 'You' }
-      : { id: 'unknown', displayName: 'You' },
+    from: msUserId.value && user.value
+      ? { user: { id: msUserId.value, displayName: user.value.displayName ?? 'You' } }
+      : { user: { id: 'unknown', displayName: 'You' } },
   }
 
   messages.value = [...messages.value, optimisticMsg]
   nextTick(() => messageListRef.value?.scrollToBottom(true))
 
   $orpc.chats.sendMessage({
-    chatId: props.chat.id,
+    chatId: props.chat.id!,
     content: payload.content,
     mentions: payload.mentions,
     image: payload.image
       ? { contentBytes: payload.image.contentBytes, contentType: payload.image.contentType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' }
       : undefined,
   }).then(({ message: real }) => {
-    // SSE may have already replaced the optimistic message — skip if so
     if (!pendingSends.has(tempId)) return
     pendingSends.delete(tempId)
 
     const idx = messages.value.findIndex(m => m.id === tempId)
     if (idx !== -1) {
       const updated = [...messages.value]
-      updated[idx] = real
+      updated[idx] = real as ChatMessage
       messages.value = updated
     }
   }).catch((err: unknown) => {
     pendingSends.delete(tempId)
-    const failedMsg = messages.value.find(m => m.id === tempId)
+    const failedMsg = messages.value.find(m => m.id === tempId) as OptimisticChatMessage | undefined
     if (failedMsg) {
       failedMsg.sendFailed = getErrorMessage(err, 'Failed to send')
     }
@@ -208,12 +198,12 @@ defineExpose({ messagesContainer: messageListRef, refreshMessages, appendIncomin
             <p class="truncate text-sm font-semibold text-highlighted">
               {{ getChatDisplayName(chat, user?.id) }}
             </p>
-            <p v-if="chat.chatType !== 'oneOnOne'" class="text-xs text-dimmed">
-              {{ chat.members.length }} members
+            <p v-if="getChatType(chat) !== 'oneOnOne'" class="text-xs text-dimmed">
+              {{ getChatMembers(chat).length }} members
             </p>
           </div>
-          <UBadge v-if="chat.chatType === 'meeting'" color="info" variant="outline" size="xs">Meeting</UBadge>
-          <UBadge v-else-if="chat.chatType === 'group'" color="neutral" variant="outline" size="xs">Group</UBadge>
+          <UBadge v-if="getChatType(chat) === 'meeting'" color="info" variant="outline" size="xs">Meeting</UBadge>
+          <UBadge v-else-if="getChatType(chat) === 'group'" color="neutral" variant="outline" size="xs">Group</UBadge>
         </div>
       </div>
 
@@ -235,8 +225,8 @@ defineExpose({ messagesContainer: messageListRef, refreshMessages, appendIncomin
       />
 
       <AppMessageInput
-        :chat-id="chat.id"
-        :members="chat.members"
+        :chat-id="chat.id!"
+        :members="getChatMembers(chat)"
         :ms-user-id="msUserId"
         :disabled="!chat.canRespond"
         @submit="handleSubmit"

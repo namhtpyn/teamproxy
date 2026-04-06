@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Chat } from '~/types/chat'
+import { getLastMessagePreview, getLastMessageReadDateTime, getLastUpdatedDateTime } from '~/utils/graph-helpers'
 
 const { $orpc } = useNuxtApp()
 
@@ -18,8 +19,8 @@ const chatsError = ref<string | null>(null)
 const sortedChats = computed(() =>
   [...chats.value].sort(
     (a, b) =>
-      new Date(b.lastUpdatedDateTime).getTime() -
-      new Date(a.lastUpdatedDateTime).getTime(),
+      new Date(getLastUpdatedDateTime(b)).getTime() -
+      new Date(getLastUpdatedDateTime(a)).getTime(),
   ),
 )
 
@@ -42,10 +43,12 @@ async function fetchChats() {
 }
 
 function isUnread(chat: Chat): boolean {
-  if (!chat.lastMessagePreview || !chat.lastMessageReadDateTime) return false
+  const preview = getLastMessagePreview(chat)
+  const readDateTime = getLastMessageReadDateTime(chat)
+  if (!preview || !readDateTime) return false
   return (
-    new Date(chat.lastMessagePreview.createdDateTime).getTime() >
-    new Date(chat.lastMessageReadDateTime).getTime()
+    new Date(preview.createdDateTime).getTime() >
+    new Date(readDateTime).getTime()
   )
 }
 

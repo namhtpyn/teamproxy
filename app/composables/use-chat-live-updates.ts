@@ -1,5 +1,7 @@
+import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { Chat } from '~/types/chat'
-import type { MessageContentType, MessageType } from '#shared/utils/enums'
+import type { MessageType } from '#shared/utils/enums'
+import { getSender, getLastMessagePreview, setLastMessagePreview, setLastMessageReadDateTime } from '~/utils/graph-helpers'
 
 export function useChatLiveUpdates(options: {
   selectedChatId: Ref<string | null>
@@ -18,29 +20,30 @@ export function useChatLiveUpdates(options: {
     const chat = chatSidebar.value.chats.find(c => c.id === chatId)
     if (!chat) return
 
-    const senderName = (msg.from as { user?: { displayName?: string } })?.user?.displayName ?? null
-    const body = msg.body as { content?: string; contentType?: string } | undefined
-    const createdAt = String(msg.createdDateTime ?? new Date().toISOString())
-    const msgType = String(msg.messageType ?? 'message') as MessageType
+    const chatMsg = msg as ChatMessage
+    const senderName = getSender(chatMsg)?.displayName ?? null
+    const body = chatMsg.body
+    const createdAt = String(chatMsg.createdDateTime ?? new Date().toISOString())
+    const msgType = String(chatMsg.messageType ?? 'message') as MessageType
 
     let previewContent = body?.content ?? ''
-    if (msg.eventDetail) {
-      previewContent = getSystemEventText(msg.eventDetail as Record<string, unknown>) ?? 'System event'
+    if (chatMsg.eventDetail) {
+      previewContent = getSystemEventText(chatMsg.eventDetail as Record<string, unknown>) ?? 'System event'
     }
 
-    chat.lastMessagePreview = {
-      id: String(msg.id ?? ''),
+    setLastMessagePreview(chat, {
+      id: String(chatMsg.id ?? ''),
       createdDateTime: createdAt,
       messageType: msgType,
-      contentType: (body?.contentType ?? 'text') as MessageContentType,
+      contentType: (body?.contentType ?? 'text') as 'text' | 'html',
       content: previewContent,
       senderDisplayName: senderName,
-    }
+    })
+
     chat.lastUpdatedDateTime = createdAt
 
-    // Don't show unread indicator for the chat we're currently viewing and reading
     if (chatId === selectedChatId.value && conversationPanel.value?.isNearBottom) {
-      chat.lastMessageReadDateTime = createdAt
+      setLastMessageReadDateTime(chat, createdAt)
     }
   }
 
@@ -70,8 +73,9 @@ export function useChatLiveUpdates(options: {
     if (!selectedChatId.value || !chatSidebar.value?.chats) return
     if (!conversationPanel.value?.isNearBottom) return
     const chat = chatSidebar.value.chats.find(c => c.id === selectedChatId.value)
-    if (!chat?.lastMessagePreview) return
-    chat.lastMessageReadDateTime = chat.lastMessagePreview.createdDateTime
+    const preview = getLastMessagePreview(chat!)
+    if (!chat || !preview) return
+    setLastMessageReadDateTime(chat, preview.createdDateTime)
   }
 
   watch(

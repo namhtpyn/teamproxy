@@ -9,63 +9,6 @@ import type { Chat, ChatMessage } from '../../ms-graph/types'
 import { getEventPublisher, liveEventSchema } from '../../utils/event-bus'
 import { getAllowedChats, getAllowedChat } from '../../utils/allowed-chats'
 
-function mapChat(chat: Chat) {
-  const members = chat.members ?? []
-  const preview = chat.lastMessagePreview
-  const viewpoint = chat.viewpoint
-
-  return {
-    id: chat.id!,
-    chatType: chat.chatType ?? ('unknownFutureValue' as string),
-    topic: chat.topic ?? null,
-    webUrl: chat.webUrl ?? null,
-    createdDateTime: chat.createdDateTime ?? new Date().toISOString(),
-    lastUpdatedDateTime: chat.lastUpdatedDateTime ?? new Date().toISOString(),
-    isHidden: viewpoint?.isHidden ?? false,
-    lastMessageReadDateTime: viewpoint?.lastMessageReadDateTime ?? null,
-    members: members.map((m) => ({
-      id: m.id!,
-      displayName: m.displayName ?? 'Unknown',
-      userId: null,
-      email: null,
-    })),
-    lastMessagePreview: preview
-      ? {
-          id: preview.id!,
-          createdDateTime: preview.createdDateTime ?? new Date().toISOString(),
-          messageType: preview.messageType ?? 'message',
-          contentType: preview.body?.contentType ?? 'text',
-          content: preview.body?.content ?? '',
-          senderDisplayName: preview.from?.user?.displayName ?? null,
-        }
-      : null,
-  }
-}
-
-function mapMessage(msg: ChatMessage) {
-  if (msg.eventDetail) {
-    consola.info(
-      `[eventDetail] type=${(msg.eventDetail as Record<string, unknown>)['@odata.type'] ?? 'unknown'}`,
-      JSON.stringify(msg.eventDetail),
-    )
-  }
-  return {
-    id: msg.id!,
-    replyToId: msg.replyToId ?? null,
-    messageType: msg.messageType ?? 'message',
-    contentType: msg.body?.contentType ?? 'text',
-    content: msg.body?.content ?? '',
-    createdDateTime: msg.createdDateTime ?? new Date().toISOString(),
-    sender: msg.from?.user
-      ? {
-          id: msg.from.user.id ?? '',
-          displayName: msg.from.user.displayName ?? 'Unknown',
-        }
-      : null,
-    eventDetail: msg.eventDetail as Record<string, unknown> | null,
-  }
-}
-
 export const chatsRouter = {
   getMe: authed.handler(async ({ context: { accessToken } }) => {
     const me = await graphRequest<{ id: string; displayName: string }>({
@@ -103,7 +46,7 @@ export const chatsRouter = {
 
     return {
       chats: results.map((chat) => ({
-        ...mapChat(chat),
+        ...chat,
         canRespond: allowedMap.get(chat.id!)?.canRespond ?? false,
       })),
     }
@@ -120,7 +63,7 @@ export const chatsRouter = {
     .handler(async ({ input, context: { accessToken } }) => {
       const client = createGraphClient({ accessToken })
       const query: Record<string, string> = {
-        $top: String(input.top),
+        $top: String(input.top + 1),
         $orderby: 'createdDateTime desc',
       }
       if (input.before) {
@@ -132,7 +75,7 @@ export const chatsRouter = {
         if (results.length >= input.top) break
       }
       return {
-        messages: results.slice(0, input.top).map(mapMessage),
+        messages: results.slice(0, input.top),
         hasMore: results.length >= input.top,
       }
     }),
@@ -221,7 +164,7 @@ export const chatsRouter = {
         hostedContents,
       )
 
-      return { message: mapMessage(response as ChatMessage) }
+      return { message: response as ChatMessage }
     }),
 
   liveAllMessages: authed.output(eventIterator(liveEventSchema)).handler(async function* ({

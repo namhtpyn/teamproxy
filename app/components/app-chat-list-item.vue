@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Chat } from '~/types/chat'
 import { useTimeAgo } from '@vueuse/core'
+import { getLastMessagePreview, getChatType } from '~/utils/graph-helpers'
 
 const props = defineProps<{
   chat: Chat
@@ -15,7 +16,7 @@ const emit = defineEmits<{
 const { user } = useAuth()
 
 const timeAgo = useTimeAgo(
-  () => props.chat.lastMessagePreview?.createdDateTime ?? Date.now(),
+  () => getLastMessagePreview(props.chat)?.createdDateTime ?? Date.now(),
 )
 
 </script>
@@ -46,12 +47,12 @@ const timeAgo = useTimeAgo(
             {{ getChatDisplayName(props.chat, user?.id) }}
           </span>
           <UIcon
-            v-if="props.chat.chatType === 'group'"
+            v-if="getChatType(props.chat) === 'group'"
             name="i-lucide-users"
             class="h-3 w-3 flex-shrink-0 text-dimmed"
           />
           <UIcon
-            v-else-if="props.chat.chatType === 'meeting'"
+            v-else-if="getChatType(props.chat) === 'meeting'"
             name="i-lucide-video"
             class="h-3 w-3 flex-shrink-0 text-dimmed"
           />

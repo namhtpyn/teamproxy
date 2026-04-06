@@ -1,24 +1,29 @@
 <script setup lang="ts">
-import type { Message } from '~/types/chat'
+import type { ChatMessage } from '@microsoft/microsoft-graph-types'
+import type { OptimisticChatMessage } from '~/types/chat'
+import { getEventDetail, getMessageContent, getSender } from '~/utils/graph-helpers'
 
 const props = defineProps<{
-  msg: Message
+  msg: ChatMessage | OptimisticChatMessage
   msUserId?: string | null
 }>()
 
-const isOwn = computed(() => !!props.msUserId && props.msg.sender?.id === props.msUserId)
-const isSending = computed(() => props.msg.id.startsWith('temp:') && !props.msg.sendFailed)
-const isSystemEvent = computed(() => !!props.msg.eventDetail)
-const systemEventInfo = computed(() => getSystemEventInfo(props.msg.eventDetail))
+const sender = computed(() => getSender(props.msg))
+const isOwn = computed(() => !!props.msUserId && sender.value?.id === props.msUserId)
+const isSending = computed(() => props.msg.id?.startsWith('temp:') && !('sendFailed' in props.msg && props.msg.sendFailed))
+const isSystemEvent = computed(() => !!getEventDetail(props.msg))
+const systemEventInfo = computed(() => getSystemEventInfo(getEventDetail(props.msg)))
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
 
+const content = computed(() => getMessageContent(props.msg))
+
 const messageImages = computed(() => {
-  if (!props.msg.content) return []
+  if (!content.value) return []
   const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
   const images: string[] = []
   let match
-  while ((match = imgRegex.exec(props.msg.content)) !== null) {
+  while ((match = imgRegex.exec(content.value)) !== null) {
     const src = match[1]!
     if (src.startsWith(GRAPH_BASE)) {
       const apiPath = src.replace(GRAPH_BASE, '')
@@ -30,7 +35,11 @@ const messageImages = computed(() => {
   return images
 })
 
-const textContent = computed(() => stripHtml(props.msg.content ?? ''))
+const textContent = computed(() => stripHtml(content.value))
+
+const sendFailed = computed(() => ('sendFailed' in props.msg ? props.msg.sendFailed : undefined))
+
+const messageTime = computed(() => formatMessageTime(props.msg.createdDateTime ?? ''))
 
 const lightboxVisible = ref(false)
 const lightboxIndex = ref(0)
@@ -45,7 +54,7 @@ function openLightbox(index: number) {
 <template>
   <div v-if="isSystemEvent && systemEventInfo" class="flex justify-center">
     <div class="flex items-center gap-1.5 rounded-full bg-elevated/50 px-3 py-1 text-xs text-dimmed">
-      <span>{{ formatMessageTime(msg.createdDateTime) }}</span>
+      <span>{{ messageTime }}</span>
       <span>·</span>
       <span>{{ systemEventInfo.text }}</span>
       <a
@@ -61,9 +70,9 @@ function openLightbox(index: number) {
   <div v-else :class="isOwn ? 'flex justify-end' : 'flex justify-start'">
     <div v-if="isOwn" class="max-w-[70%]">
       <span class="mb-0.5 block text-right text-[10px] text-dimmed">
-        {{ formatMessageTime(msg.createdDateTime) }}
+        {{ messageTime }}
       </span>
-      <div class="rounded-2xl px-3.5 py-2" :class="msg.sendFailed ? 'bg-red-500/15 ring-1 ring-red-500/30' : 'bg-accented'">
+      <div class="rounded-2xl px-3.5 py-2" :class="sendFailed ? 'bg-red-500/15 ring-1 ring-red-500/30' : 'bg-accented'">
         <p v-if="textContent" class="whitespace-pre-wrap break-words text-sm leading-relaxed text-highlighted">
           {{ textContent }}
         </p>
@@ -83,8 +92,8 @@ function openLightbox(index: number) {
         <UIcon name="i-lucide-loader-circle" class="h-3 w-3 animate-spin text-muted" />
         <span class="text-[10px] text-muted">Sending</span>
       </div>
-      <p v-else-if="msg.sendFailed" class="mt-1 text-right text-xs text-red-400">
-        {{ msg.sendFailed }}
+      <p v-else-if="sendFailed" class="mt-1 text-right text-xs text-red-400">
+        {{ sendFailed }}
       </p>
     </div>
 
@@ -93,18 +102,18 @@ function openLightbox(index: number) {
         size="2xs"
         class="mt-1 flex-shrink-0"
       >
-        {{ msg.sender?.displayName?.charAt(0)?.toUpperCase() ?? '?' }}
+        {{ sender?.displayName?.charAt(0)?.toUpperCase() ?? '?' }}
       </UAvatar>
       <div class="flex flex-col items-start gap-0.5">
         <div class="flex items-baseline gap-2 px-3">
           <span class="text-xs font-medium text-highlighted">
-            {{ msg.sender?.displayName ?? 'Unknown' }}
+            {{ sender?.displayName ?? 'Unknown' }}
           </span>
           <span class="text-[10px] text-dimmed">
-            {{ formatMessageTime(msg.createdDateTime) }}
+            {{ messageTime }}
           </span>
         </div>
-        <div class="rounded-2xl px-3.5 py-2" :class="msg.sendFailed ? 'bg-red-500/15 ring-1 ring-red-500/30' : 'bg-elevated'">
+        <div class="rounded-2xl px-3.5 py-2" :class="sendFailed ? 'bg-red-500/15 ring-1 ring-red-500/30' : 'bg-elevated'">
           <p v-if="textContent" class="whitespace-pre-wrap break-words text-sm leading-relaxed text-highlighted">
             {{ textContent }}
           </p>
@@ -120,8 +129,8 @@ function openLightbox(index: number) {
             >
           </div>
         </div>
-        <p v-if="msg.sendFailed" class="mt-1 text-xs text-red-400">
-          {{ msg.sendFailed }}
+        <p v-if="sendFailed" class="mt-1 text-xs text-red-400">
+          {{ sendFailed }}
         </p>
       </div>
     </div>

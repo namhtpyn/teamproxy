@@ -3,6 +3,7 @@ import { consola } from 'consola'
 import { db } from '../../db/client'
 import { getActiveToken } from '../../db/get-active-token'
 import { createGraphClient } from '../../ms-graph/graph-client'
+import type { ChatMessage } from '../../ms-graph/types'
 import { liveEventSchema, getEventPublisher } from '../../utils/event-bus'
 import { getMsSubscriptionsByClientStates } from '../../utils/ms-subscription-store'
 
@@ -84,7 +85,14 @@ export default defineEventHandler(async (event) => {
       if (token) {
         try {
           const client = createGraphClient({ accessToken: token.accessToken })
-          const message = await client.chats.getMessage(resourceToPath(notification.resource))
+          const message = await client.chats.getMessage(resourceToPath(notification.resource)) as ChatMessage
+
+          if (message.eventDetail) {
+            consola.info(
+              `[eventDetail] type=${(message.eventDetail as Record<string, unknown>)['@odata.type'] ?? 'unknown'}`,
+              JSON.stringify(message.eventDetail),
+            )
+          }
 
           const eventType: 'message' | 'error' =
             notification.changeType === 'deleted' ? 'error' : 'message'

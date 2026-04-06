@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import type { Message } from '~/types/chat'
+import type { ChatMessage } from '@microsoft/microsoft-graph-types'
+import type { OptimisticChatMessage } from '~/types/chat'
 
 const props = defineProps<{
-  messages: Message[]
+  messages: (ChatMessage | OptimisticChatMessage)[]
   loadingMore: boolean
   msUserId?: string | null
 }>()

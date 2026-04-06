@@ -1,7 +1,5 @@
-interface ChatLike {
-  topic: string | null
-  members: Array<{ userId: string | null; displayName: string }>
-}
+import type { Chat } from '~/types/chat'
+import { getChatMembers, getChatTopic } from './graph-helpers'
 
 export function stripHtml(html: string): string {
   return html
@@ -17,12 +15,14 @@ export function stripHtml(html: string): string {
     .trim()
 }
 
-export function getChatDisplayName(chat: ChatLike, currentUserId?: string | null): string {
-  if (chat.topic) return chat.topic
-  const other = chat.members.find((m) => m.userId !== currentUserId)
+export function getChatDisplayName(chat: Chat, currentUserId?: string | null): string {
+  const topic = getChatTopic(chat)
+  if (topic) return topic
+  const members = getChatMembers(chat)
+  const other = members.find((m) => m.userId !== currentUserId)
   return other?.displayName ?? 'Unknown'
 }
 
-export function getChatInitial(chat: ChatLike, currentUserId?: string | null): string {
+export function getChatInitial(chat: Chat, currentUserId?: string | null): string {
   return getChatDisplayName(chat, currentUserId).charAt(0).toUpperCase()
 }
