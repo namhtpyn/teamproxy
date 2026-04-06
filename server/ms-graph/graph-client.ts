@@ -1,5 +1,5 @@
 import { graphRequest, graphPaginate, GraphAPIError } from './client'
-import type { GraphChat, GraphChatMessage, GraphChannel, GraphTeam, GraphSubscription } from './types'
+import type { Chat, ChatMessage, Channel, Team, Subscription } from './types'
 
 export interface GraphClientOptions {
   accessToken: string
@@ -29,16 +29,16 @@ export interface RenewSubscriptionParams {
 export function createGraphClient({ accessToken }: GraphClientOptions) {
   return {
     chats: {
-      list(params?: ODataQueryParams): AsyncGenerator<GraphChat[]> {
-        return graphPaginate<GraphChat>({
+      list(params?: ODataQueryParams): AsyncGenerator<Chat[]> {
+        return graphPaginate<Chat>({
           method: 'GET',
           path: '/me/chats',
           query: params as Record<string, string>,
           accessToken,
         })
       },
-      messages(chatId: string, params?: ODataQueryParams): AsyncGenerator<GraphChatMessage[]> {
-        return graphPaginate<GraphChatMessage>({
+      messages(chatId: string, params?: ODataQueryParams): AsyncGenerator<ChatMessage[]> {
+        return graphPaginate<ChatMessage>({
           method: 'GET',
           path: `/chats/${chatId}/messages`,
           query: params as Record<string, string>,
@@ -53,7 +53,7 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
         temporaryId: string
         contentBytes: string
         contentType: string
-      }>): Promise<GraphChatMessage | undefined> {
+      }>): Promise<ChatMessage | undefined> {
         const reqBody: Record<string, unknown> = { body }
         if (replyToId) reqBody.replyToId = replyToId
         if (mentions && mentions.length > 0) reqBody.mentions = mentions
@@ -64,7 +64,7 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
             contentType: hc.contentType,
           }))
         }
-        return graphRequest<GraphChatMessage>({
+        return graphRequest<ChatMessage>({
           method: 'POST',
           path: `/chats/${chatId}/messages`,
           body: reqBody,
@@ -87,8 +87,8 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
       },
     },
     teams: {
-      async list(): Promise<GraphTeam[]> {
-        const data = await graphRequest<{ value: GraphTeam[] }>({
+      async list(): Promise<Team[]> {
+        const data = await graphRequest<{ value: Team[] }>({
           method: 'GET',
           path: '/me/joinedTeams',
           accessToken,
@@ -96,16 +96,16 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
         return data?.value ?? []
       },
       channels: {
-        list(teamId: string): AsyncGenerator<GraphChannel[]> {
-          return graphPaginate<GraphChannel>({
+        list(teamId: string): AsyncGenerator<Channel[]> {
+          return graphPaginate<Channel>({
             method: 'GET',
             path: `/teams/${teamId}/channels`,
             accessToken,
           })
         },
         messages: {
-          list(teamId: string, channelId: string, params?: ODataQueryParams): AsyncGenerator<GraphChatMessage[]> {
-            return graphPaginate<GraphChatMessage>({
+          list(teamId: string, channelId: string, params?: ODataQueryParams): AsyncGenerator<ChatMessage[]> {
+            return graphPaginate<ChatMessage>({
               method: 'GET',
               path: `/teams/${teamId}/channels/${channelId}/messages`,
               query: params as Record<string, string>,
@@ -116,8 +116,8 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
       },
     },
     subscriptions: {
-      async create(params: CreateSubscriptionParams): Promise<GraphSubscription> {
-        const result = await graphRequest<GraphSubscription>({
+      async create(params: CreateSubscriptionParams): Promise<Subscription> {
+        const result = await graphRequest<Subscription>({
           method: 'POST',
           path: '/subscriptions',
           body: params,

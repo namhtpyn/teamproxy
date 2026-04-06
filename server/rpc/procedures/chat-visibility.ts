@@ -5,7 +5,7 @@ import { CHAT_TYPES, MS_SUBSCRIPTION_STATUSES } from '#shared/utils/enums'
 import { adminAuthed } from '../middleware/auth'
 import { graphRequest } from '../../ms-graph/client'
 import { createGraphClient } from '../../ms-graph/graph-client'
-import type { GraphChat, GraphPaginationResponse } from '../../ms-graph/types'
+import type { Chat, GraphPaginationResponse } from '../../ms-graph/types'
 import { clearMsSubscription } from '../../utils/ms-subscription-store'
 import { getMsSubscriptionStatus } from '../../utils/ms-subscription-status'
 import { getEventPublisher } from '../../utils/event-bus'
@@ -15,28 +15,14 @@ import { db } from '../../db/client'
 import { allowedChats } from '../../db/schema'
 import { eq } from 'drizzle-orm'
 
-const chatSchema = z.object({
-  id: z.string(),
-  topic: z.string(),
-  chatType: z.string(),
-  allowed: z.boolean(),
-  canRespond: z.boolean(),
-  members: z.array(z.string()),
-  subscriptionStatus: z.enum(MS_SUBSCRIPTION_STATUSES),
-})
-
 export const chatVisibilityRouter = {
   getVisibility: adminAuthed
     .input(z.object({
       cursor: z.string().optional(),
       limit: z.number().int().min(1).max(100).default(20),
     }))
-    .output(z.object({
-      chats: z.array(chatSchema),
-      nextCursor: z.string().nullable(),
-    }))
     .handler(async ({ input, context: { accessToken } }) => {
-      let page: GraphPaginationResponse<GraphChat>
+      let page: GraphPaginationResponse<Chat>
 
       if (input.cursor) {
         const response = await fetch(input.cursor, {
@@ -49,9 +35,9 @@ export const chatVisibilityRouter = {
         if (!response.ok) {
           throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to fetch chats page' })
         }
-        page = await response.json() as GraphPaginationResponse<GraphChat>
+        page = await response.json() as GraphPaginationResponse<Chat>
       } else {
-        const result = await graphRequest<GraphPaginationResponse<GraphChat>>({
+        const result = await graphRequest<GraphPaginationResponse<Chat>>({
           method: 'GET',
           path: '/me/chats',
           query: { $expand: 'members', $top: String(input.limit) },
@@ -68,14 +54,14 @@ export const chatVisibilityRouter = {
 
       return {
         chats: page.value.map((c) => {
-          const row = rowMap.get(c.id)
+          const row = rowMap.get(c.id!)
           return {
-            id: c.id,
+            id: c.id!,
             topic: c.topic ?? '',
-            chatType: c.chatType,
+            chatType: c.chatType ?? 'unknownFutureValue' as string,
             allowed: row?.allowed ?? false,
             canRespond: row?.canRespond ?? false,
-            members: (c.members ?? []).map((m) => m.displayName).filter(Boolean),
+            members: (c.members ?? []).map((m) => m.displayName).filter((n): n is string => !!n),
             subscriptionStatus: getMsSubscriptionStatus(row),
           }
         }),
@@ -85,7 +71,6 @@ export const chatVisibilityRouter = {
 
   setVisibility: adminAuthed
     .input(z.object({ chatId: z.string(), allowed: z.boolean(), canRespond: z.boolean(), topic: z.string(), chatType: z.enum(CHAT_TYPES) }))
-    .output(z.object({ success: z.boolean(), subscriptionStatus: z.enum(MS_SUBSCRIPTION_STATUSES), subscriptionError: z.string().optional() }))
     .handler(async ({ input, context: { accessToken } }) => {
       const existing = getAllowedChat(input.chatId)
 
@@ -136,7 +121,6 @@ export const chatVisibilityRouter = {
 
   setCanRespond: adminAuthed
     .input(z.object({ chatId: z.string(), canRespond: z.boolean() }))
-    .output(z.object({ success: z.boolean() }))
     .handler(async ({ input }) => {
       const existing = getAllowedChat(input.chatId)
 

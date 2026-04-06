@@ -1,79 +1,39 @@
 import { z } from 'zod'
 import { ORPCError, eventIterator } from '@orpc/server'
-import { CHAT_TYPES, MESSAGE_TYPES, MESSAGE_CONTENT_TYPES } from '#shared/utils/enums'
+import { consola } from 'consola'
 import { authed } from '../middleware/auth'
 import { rateLimited } from '../middleware/rate-limit'
 import { createGraphClient } from '../../ms-graph/graph-client'
 import { graphRequest, graphPaginate } from '../../ms-graph/client'
-import type { GraphChat, GraphChatMessage } from '../../ms-graph/types'
+import type { Chat, ChatMessage } from '../../ms-graph/types'
 import { getEventPublisher, liveEventSchema } from '../../utils/event-bus'
 import { getAllowedChats, getAllowedChat } from '../../utils/allowed-chats'
 
-const chatMemberSchema = z.object({
-  id: z.string(),
-  displayName: z.string().nullable(),
-  userId: z.string().nullable(),
-  email: z.string().nullable(),
-})
-
-const previewSchema = z.object({
-  id: z.string(),
-  createdDateTime: z.string(),
-  messageType: z.enum(MESSAGE_TYPES),
-  contentType: z.enum(MESSAGE_CONTENT_TYPES),
-  content: z.string(),
-  senderDisplayName: z.string().nullable(),
-})
-
-const chatSchema = z.object({
-  id: z.string(),
-  chatType: z.string(),
-  topic: z.string().nullable(),
-  webUrl: z.string().nullable(),
-  createdDateTime: z.string(),
-  lastUpdatedDateTime: z.string(),
-  isHidden: z.boolean(),
-  lastMessageReadDateTime: z.string().nullable(),
-  canRespond: z.boolean(),
-  members: z.array(chatMemberSchema),
-  lastMessagePreview: previewSchema.nullable(),
-})
-
-const messageSchema = z.object({
-  id: z.string(),
-  replyToId: z.string().nullable(),
-  messageType: z.enum(MESSAGE_TYPES),
-  contentType: z.enum(MESSAGE_CONTENT_TYPES),
-  content: z.string(),
-  createdDateTime: z.string(),
-  sender: z.object({ id: z.string(), displayName: z.string().nullable() }).nullable(),
-})
-
-function mapChat(chat: GraphChat) {
+function mapChat(chat: Chat) {
   const members = chat.members ?? []
   const preview = chat.lastMessagePreview
   const viewpoint = chat.viewpoint
 
   return {
-    id: chat.id,
-    chatType: chat.chatType,
+    id: chat.id!,
+    chatType: chat.chatType ?? 'unknownFutureValue' as string,
     topic: chat.topic ?? null,
     webUrl: chat.webUrl ?? null,
-    createdDateTime: chat.createdDateTime,
-    lastUpdatedDateTime: chat.lastUpdatedDateTime,
+    createdDateTime: chat.createdDateTime ?? new Date().toISOString(),
+    lastUpdatedDateTime: chat.lastUpdatedDateTime ?? new Date().toISOString(),
     isHidden: viewpoint?.isHidden ?? false,
     lastMessageReadDateTime: viewpoint?.lastMessageReadDateTime ?? null,
     members: members.map((m) => ({
-      id: m.id,
-      displayName: m.displayName,
-      userId: m.userId,
-      email: m.email ?? null,
+      id: m.id!,
+      displayName: m.displayName ?? 'Unknown',
+      userId: null,
+      email: null,
     })),
     lastMessagePreview: preview
       ? {
-          id: preview.id,
-          createdDateTime: preview.createdDateTime,
-          messageType: preview.messageType,
+          id: preview.id!,
+          createdDateTime: preview.createdDateTime ?? new Date().toISOString(),
+          messageType: preview.messageType ?? 'message',
           contentType: preview.body?.contentType ?? 'text',
           content: preview.body?.content ?? '',
           senderDisplayName: preview.from?.user?.displayName ?? null,
@@ -82,69 +42,69 @@ function mapChat(chat: GraphChat) {
   }
 }
 
-function mapMessage(msg: GraphChatMessage) {
+function mapMessage(msg: ChatMessage) {
+  if (msg.eventDetail) {
+    consola.info(`[eventDetail] type=${(msg.eventDetail as Record<string, unknown>)['@odata.type'] ?? 'unknown'}`, JSON.stringify(msg.eventDetail))
+  }
   return {
-    id: msg.id,
+    id: msg.id!,
     replyToId: msg.replyToId ?? null,
     messageType: msg.messageType ?? 'message',
     contentType: msg.body?.contentType ?? 'text',
     content: msg.body?.content ?? '',
-    createdDateTime: msg.createdDateTime,
+    createdDateTime: msg.createdDateTime ?? new Date().toISOString(),
     sender: msg.from?.user
       ? {
-          id: msg.from.user.id,
-          displayName: msg.from.user.displayName,
+          id: msg.from.user.id ?? '',
+          displayName: msg.from.user.displayName ?? 'Unknown',
         }
       : null,
+    eventDetail: msg.eventDetail as Record<string, unknown> | null,
   }
 }
 
 export const chatsRouter = {
-  getMe: authed
-    .output(z.object({ id: z.string(), displayName: z.string() }))
-    .handler(async ({ context: { accessToken } }) => {
-      const me = await graphRequest<{ id: string; displayName: string }>({
-        method: 'GET',
-        path: '/me',
-        query: { $select: 'id,displayName' },
-        accessToken,
-      })
-      if (!me) {
-        throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to fetch user profile' })
-      }
-      return { id: me.id, displayName: me.displayName }
-    }),
+  getMe: authed.handler(async ({ context: { accessToken } }) => {
+    const me = await graphRequest<{ id: string; displayName: string }>({
+      method: 'GET',
+      path: '/me',
+      query: { $select: 'id,displayName' },
+      accessToken,
+    })
+    if (!me) {
+      throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Failed to fetch user profile' })
+    }
+    return { id: me.id, displayName: me.displayName }
+  }),
 
-  list: authed
-    .output(z.object({ chats: z.array(chatSchema) }))
-    .handler(async ({ context: { accessToken } }) => {
-      const allowed = getAllowedChats()
-      if (allowed.length === 0) return { chats: [] }
+  list: authed.handler(async ({ context: { accessToken } }) => {
+    const allowed = getAllowedChats()
+    if (allowed.length === 0) return { chats: [] }
 
-      const allowedMap = new Map(allowed.map((r) => [r.chatId, r]))
-      const filter = allowed.map((r) => `'${r.chatId}'`).join(',')
-      const results: GraphChat[] = []
-      for await (const batch of graphPaginate<GraphChat>({
-        method: 'GET',
-        path: '/me/chats',
-        query: {
-          $expand: 'members,lastMessagePreview',
-          $orderby: 'lastMessagePreview/createdDateTime desc',
-          $filter: `id in (${filter})`,
-          $top: '50',
-        },
-        accessToken,
-      })) {
-        results.push(...batch)
-      }
+    const allowedMap = new Map(allowed.map((r) => [r.chatId, r]))
+    const filter = allowed.map((r) => `'${r.chatId}'`).join(',')
+    const results: Chat[] = []
+    for await (const batch of graphPaginate<Chat>({
+      method: 'GET',
+      path: '/me/chats',
+      query: {
+        $expand: 'members,lastMessagePreview',
+        $orderby: 'lastMessagePreview/createdDateTime desc',
+        $filter: `id in (${filter})`,
+        $top: '50',
+      },
+      accessToken,
+    })) {
+      results.push(...batch)
+    }
 
-      return {
-        chats: results.map((chat) => ({
-          ...mapChat(chat),
-          canRespond: allowedMap.get(chat.id)?.canRespond ?? false,
-        })),
-      }
-    }),
+    return {
+      chats: results.map((chat) => ({
+        ...mapChat(chat),
+        canRespond: allowedMap.get(chat.id!)?.canRespond ?? false,
+      })),
+    }
+  }),
 
   getMessages: authed
     .input(
@@ -154,7 +114,6 @@ export const chatsRouter = {
         before: z.string().datetime({ offset: true }).optional(),
       }),
     )
-    .output(z.object({ messages: z.array(messageSchema), hasMore: z.boolean() }))
     .handler(async ({ input, context: { accessToken } }) => {
       const client = createGraphClient({ accessToken })
       const query: Record<string, string> = {
@@ -164,7 +123,7 @@ export const chatsRouter = {
       if (input.before) {
         query.$filter = `createdDateTime lt ${input.before}`
       }
-      const results: GraphChatMessage[] = []
+      const results: ChatMessage[] = []
       for await (const batch of client.chats.messages(input.chatId, query)) {
         results.push(...batch)
         if (results.length >= input.top) break
@@ -188,7 +147,6 @@ export const chatsRouter = {
         }).optional(),
       }),
     )
-    .output(z.object({ message: messageSchema }))
     .handler(async ({ input, context: { accessToken } }) => {
       const chatAccess = getAllowedChat(input.chatId)
       if (!chatAccess || !chatAccess.allowed || !chatAccess.canRespond) {
@@ -233,7 +191,7 @@ export const chatsRouter = {
 
       const response = await client.chats.send(input.chatId, { contentType, content }, input.replyToId, mentions, hostedContents)
 
-      return { message: mapMessage(response as GraphChatMessage) }
+      return { message: mapMessage(response as ChatMessage) }
     }),
 
   liveAllMessages: authed
@@ -241,7 +199,6 @@ export const chatsRouter = {
     .handler(async function* ({ context, signal, lastEventId }) {
       const publisher = getEventPublisher()
 
-      // For non-admin users, only expose messages from allowed chats
       let allowedChatIds: Set<string> | null = null
       if (context.role !== 'admin') {
       const allowed = getAllowedChats()
@@ -249,10 +206,8 @@ export const chatsRouter = {
       }
 
       for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {
-        // Always let visibility and respond events through — clients need them to update UI
         if (payload.type === 'visibility' || payload.type === 'respond') {
           yield payload
-          // Keep allowedChatIds in sync so subsequent message events reflect the change
           if (payload.type === 'visibility' && allowedChatIds && payload.chatId) {
             const data = payload.data as { allowed?: boolean }
             if (data?.allowed) allowedChatIds.add(payload.chatId)

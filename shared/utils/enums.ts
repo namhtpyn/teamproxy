@@ -1,7 +1,7 @@
 export const CHAT_TYPES = ['oneOnOne', 'group', 'meeting', 'unknownFutureValue'] as const
 export type ChatType = (typeof CHAT_TYPES)[number]
 
-export const MESSAGE_TYPES = ['message', 'unknownFutureValue', 'systemEventMessage'] as const
+export const MESSAGE_TYPES = ['message', 'chatEvent', 'typing', 'unknownFutureValue', 'systemEventMessage'] as const
 export type MessageType = (typeof MESSAGE_TYPES)[number]
 
 export const MESSAGE_CONTENT_TYPES = ['text', 'html'] as const
