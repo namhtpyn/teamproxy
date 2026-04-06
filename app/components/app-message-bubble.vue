@@ -8,6 +8,8 @@ const props = defineProps<{
 
 const isOwn = computed(() => !!props.msUserId && props.msg.sender?.id === props.msUserId)
 const isSending = computed(() => props.msg.id.startsWith('temp:') && !props.msg.sendFailed)
+const isSystemEvent = computed(() => props.msg.messageType === 'systemEventMessage')
+const systemEventText = computed(() => getSystemEventText(props.msg.eventDetail))
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
 
@@ -41,7 +43,13 @@ function openLightbox(index: number) {
 </script>
 
 <template>
-  <div :class="isOwn ? 'flex justify-end' : 'flex justify-start'">
+  <div v-if="isSystemEvent" class="flex justify-center">
+    <p class="rounded-full bg-elevated/50 px-3 py-1 text-xs text-dimmed">
+      {{ systemEventText }}
+    </p>
+  </div>
+
+  <div v-else :class="isOwn ? 'flex justify-end' : 'flex justify-start'">
     <div v-if="isOwn" class="max-w-[70%]">
       <span class="mb-0.5 block text-right text-[10px] text-dimmed">
         {{ formatMessageTime(msg.createdDateTime) }}

@@ -58,12 +58,19 @@ export function useChatLiveUpdates(options: {
     const senderName = (msg.from as { user?: { displayName?: string } })?.user?.displayName ?? null
     const body = msg.body as { content?: string; contentType?: string } | undefined
     const createdAt = String(msg.createdDateTime ?? new Date().toISOString())
+    const msgType = String(msg.messageType ?? 'message') as MessageType
+
+    let previewContent = body?.content ?? ''
+    if (msgType === 'systemEventMessage') {
+      previewContent = getSystemEventText(msg.eventDetail as Record<string, unknown>) ?? 'System event'
+    }
+
     chat.lastMessagePreview = {
       id: String(msg.id ?? ''),
       createdDateTime: createdAt,
-      messageType: String(msg.messageType ?? 'message') as MessageType,
+      messageType: msgType,
       contentType: (body?.contentType ?? 'text') as MessageContentType,
-      content: body?.content ?? '',
+      content: previewContent,
       senderDisplayName: senderName,
     }
     chat.lastUpdatedDateTime = createdAt
