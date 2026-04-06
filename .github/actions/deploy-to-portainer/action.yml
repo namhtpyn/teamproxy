@@ -1,0 +1,178 @@
+name: 'Deploy to Portainer'
+description: 'Deploy a stack to Portainer'
+inputs:
+  portainer-url:
+    description: 'Portainer URL'
+    required: true
+  portainer-access-token:
+    description: 'Portainer Access Token'
+    required: true
+  portainer-endpoint-id:
+    description: 'Portainer Endpoint ID'
+    required: true
+  stack-name:
+    description: 'Name of the stack to deploy or update'
+    required: true
+  image-tag:
+    description: 'Docker image tag'
+    required: true
+  container-env:
+    description: 'Container environment variables (as JSON object)'
+    required: false
+    default: '{}'
+  template-file:
+    description: 'Path to the Docker Compose template file'
+    required: true
+  insecure:
+    description: 'Disable TLS verification for self-signed certificates'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Deploy to Portainer
+      shell: bash
+      env:
+        PORTAINER_URL: ${{ inputs.portainer-url }}
+        PORTAINER_ACCESS_TOKEN: ${{ inputs.portainer-access-token }}
+        PORTAINER_ENDPOINT_ID: ${{ inputs.portainer-endpoint-id }}
+        STACK_NAME: ${{ inputs.stack-name }}
+        IMAGE_TAG: ${{ inputs.image-tag }}
+        CONTAINER_ENV: ${{ inputs.container-env }}
+        TEMPLATE_FILE: ${{ inputs.template-file }}
+        INSECURE: ${{ inputs.insecure }}
+      run: |
+        echo "🚀 Starting deployment to Portainer..."
+        echo "Stack Name: $STACK_NAME"
+        echo "Image Tag: $IMAGE_TAG"
+        echo "Portainer URL: $PORTAINER_URL"
+        echo "Endpoint ID: $PORTAINER_ENDPOINT_ID"
+        echo "Template File: $TEMPLATE_FILE"
+
+        CURL_TLS_FLAG=""
+        if [ "$INSECURE" = "true" ]; then CURL_TLS_FLAG="-k"; fi
+
+        if [ -z "$PORTAINER_URL" ] || [ -z "$PORTAINER_ACCESS_TOKEN" ] || [ -z "$PORTAINER_ENDPOINT_ID" ] || [ -z "$STACK_NAME" ] || [ -z "$IMAGE_TAG" ] || [ -z "$TEMPLATE_FILE" ]; then
+          echo "❌ Missing required inputs"
+          exit 1
+        fi
+
+        if [ ! -f "$TEMPLATE_FILE" ]; then
+          echo "❌ Template file not found: $TEMPLATE_FILE"
+          exit 1
+        fi
+
+        echo "📋 Parsing container environment variables..."
+        ENV_VARS="[]"
+        if [ "$CONTAINER_ENV" != "{}" ] && [ -n "$CONTAINER_ENV" ]; then
+          ENV_VARS=$(echo "$CONTAINER_ENV" | jq -r 'to_entries | map({name: .key, value: (.value | tostring)})')
+          if [ $? -ne 0 ]; then
+            echo "❌ Failed to parse CONTAINER_ENV JSON"
+            exit 1
+          fi
+        fi
+
+        ENV_VARS=$(echo "$ENV_VARS" | jq --arg tag "$IMAGE_TAG" '. + [{name: "IMAGE_TAG", value: $tag}]')
+
+        echo "📋 Checking for existing stack..."
+        STACK_RESPONSE=$(curl -s $CURL_TLS_FLAG --max-time 30 -X GET \
+          "$PORTAINER_URL/api/stacks" \
+          -H "X-API-Key: $PORTAINER_ACCESS_TOKEN" \
+          -w "\\nHTTP_STATUS:%{http_code}")
+
+        STACK_HTTP_STATUS=$(echo "$STACK_RESPONSE" | tail -1 | sed 's/HTTP_STATUS://')
+        STACK_BODY=$(echo "$STACK_RESPONSE" | sed '$d')
+
+        echo "Stack query HTTP status: $STACK_HTTP_STATUS"
+
+        if [ -z "$STACK_HTTP_STATUS" ] || [ "$STACK_HTTP_STATUS" -ne 200 ]; then
+          echo "❌ Failed to query stacks. HTTP status: $STACK_HTTP_STATUS"
+          echo "Response: $STACK_BODY"
+          exit 1
+        fi
+
+        if ! echo "$STACK_BODY" | jq empty 2>/dev/null; then
+          echo "❌ Invalid JSON response from Portainer"
+          echo "Response: $STACK_BODY"
+          exit 1
+        fi
+
+        STACK_ID=$(echo "$STACK_BODY" | jq -r --arg name "$STACK_NAME" '.[] | select(.Name == $name) | .Id')
+        echo "Found stack ID: $STACK_ID"
+
+        if [ "$STACK_ID" != "null" ] && [ -n "$STACK_ID" ]; then
+          echo "🔄 Updating existing stack: $STACK_NAME (ID: $STACK_ID)"
+
+          CURRENT_ENV=$(echo "$STACK_BODY" | jq -r --arg name "$STACK_NAME" '.[] | select(.Name == $name) | .Env // []')
+          MERGED_ENV=$(echo "$CURRENT_ENV" "$ENV_VARS" | jq -s '.[0] as $current | .[1] as $new | ($current | map({(.name): .value}) | add) as $currentObj | ($new | map({(.name): .value}) | add) as $newObj | ($currentObj + $newObj) | to_entries | map({name: .key, value: .value})')
+
+          PAYLOAD=$(jq -n \
+            --rawfile stackFileContent "$TEMPLATE_FILE" \
+            --argjson env "$MERGED_ENV" \
+            '{
+              stackFileContent: $stackFileContent,
+              env: $env,
+              prune: true,
+              pullImage: true
+            }')
+
+          UPDATE_RESPONSE=$(curl -s $CURL_TLS_FLAG --max-time 300 -X PUT \
+            "$PORTAINER_URL/api/stacks/$STACK_ID?endpointId=$PORTAINER_ENDPOINT_ID" \
+            -H "X-API-Key: $PORTAINER_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -w "\\nHTTP_STATUS:%{http_code}" \
+            -d "$PAYLOAD")
+
+          HTTP_STATUS=$(echo "$UPDATE_RESPONSE" | tail -1 | sed 's/HTTP_STATUS://')
+
+          echo "Update response status: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "✅ Stack updated successfully!"
+          else
+            echo "❌ Stack update failed with status: $HTTP_STATUS"
+            RESPONSE_BODY=$(echo "$UPDATE_RESPONSE" | sed '$d')
+            echo "Error response: $RESPONSE_BODY"
+            echo "Payload sent:"
+            echo "$PAYLOAD" | jq .
+            exit 1
+          fi
+        else
+          echo "🆕 Creating new stack: $STACK_NAME"
+
+          PAYLOAD=$(jq -n \
+            --arg name "$STACK_NAME" \
+            --rawfile stackFileContent "$TEMPLATE_FILE" \
+            --argjson env "$ENV_VARS" \
+            '{
+              fromAppTemplate: false,
+              name: $name,
+              stackFileContent: $stackFileContent,
+              env: $env
+            }')
+
+          CREATE_RESPONSE=$(curl -s $CURL_TLS_FLAG --max-time 300 -X POST \
+            "$PORTAINER_URL/api/stacks/create/standalone/string?endpointId=$PORTAINER_ENDPOINT_ID" \
+            -H "X-API-Key: $PORTAINER_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -w "\\nHTTP_STATUS:%{http_code}" \
+            -d "$PAYLOAD")
+
+          HTTP_STATUS=$(echo "$CREATE_RESPONSE" | tail -1 | sed 's/HTTP_STATUS://')
+
+          echo "Create response status: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "✅ Stack created successfully!"
+          else
+            echo "❌ Stack creation failed with status: $HTTP_STATUS"
+            RESPONSE_BODY=$(echo "$CREATE_RESPONSE" | sed '$d')
+            echo "Error response: $RESPONSE_BODY"
+            echo "Payload sent:"
+            echo "$PAYLOAD" | jq .
+            exit 1
+          fi
+        fi
+
+        echo "🎉 Deployment to Portainer completed!"

@@ -76,6 +76,15 @@
 - Webhook: logs source IP; batch `getMsSubscriptionsByClientStates()` → 403 on unknown
 - DB cleanup: daily 3am (`sessionMaxAgeDays`/`tokenInactiveDays`)
 
+## CI/CD
+
+- CI: deploy-only workflow on push to `main` (no lint/typecheck/build jobs)
+- Docker: multi-stage `node:22-alpine` build → `ghcr.io/namhtpyn/teamproxy`
+- Deploy: composite action `.github/actions/deploy-to-portainer/` → Portainer API (PUT existing / POST new stack)
+- Template: `.github/workflows/portainer/production.yml` — named volume for SQLite (`/app/data/local.db`)
+- GitHub vars: `APP_DOMAIN`, `NUXT_MS_CLIENT_ID`, `NUXT_MS_TENANT_ID`, `PORTAINER_ENDPOINT_ID`, `PORTAINER_URL`
+- GitHub secrets: `NUXT_APP_ADMIN`, `NUXT_APP_USER`, `NUXT_ENCRYPTION_KEY`, `NUXT_MS_CLIENT_SECRET`, `PORTAINER_ACCESS_TOKEN`
+
 ## Codebase Map
 
 | Path | Purpose |

@@ -1,0 +1,14 @@
+services:
+  app:
+    image: ghcr.io/namhtpyn/teamproxy:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - app_data:/app/data
+    env_file: stack.env
+    environment:
+      NUXT_DATABASE_URL: /app/data/local.db
+
+volumes:
+  app_data:
