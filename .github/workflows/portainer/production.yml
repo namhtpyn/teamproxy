@@ -7,6 +7,12 @@ services:
     env_file: stack.env
     environment:
       NUXT_DATABASE_URL: /app/data/local.db
+    networks:
+      - nginx-proxy
 
 volumes:
   app_data:
+
+networks:
+  nginx-proxy:
+    external: true
