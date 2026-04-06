@@ -1,46 +1,6 @@
 import type { Chat } from '~/types/chat'
 import type { MessageContentType, MessageType } from '#shared/utils/enums'
 
-const INITIAL_RECONNECT_DELAY = 1000
-const MAX_RECONNECT_DELAY = 30_000
-const RECONNECT_BACKOFF_FACTOR = 2
-
-function createReconnectable(label: string, onConnect: (signal: AbortSignal) => Promise<void>) {
-  let controller: AbortController | null = null
-  let delay = INITIAL_RECONNECT_DELAY
-  let timeout: ReturnType<typeof setTimeout> | undefined
-  const toast = useToast()
-
-  function start() {
-    if (controller) controller.abort()
-    controller = new AbortController()
-    delay = INITIAL_RECONNECT_DELAY
-
-    ;(async () => {
-      try {
-        await onConnect(controller!.signal)
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name === 'AbortError') return
-        toast.add({ title: `${label} connection lost`, description: err instanceof Error ? err.message : undefined, color: 'warning' })
-        if (controller!.signal.aborted) return
-        timeout = setTimeout(start, delay)
-        delay = Math.min(delay * RECONNECT_BACKOFF_FACTOR, MAX_RECONNECT_DELAY)
-      }
-    })()
-  }
-
-  function stop() {
-    clearTimeout(timeout)
-    timeout = undefined
-    if (controller) {
-      controller.abort()
-      controller = null
-    }
-  }
-
-  return { start, stop }
-}
-
 export function useChatLiveUpdates(options: {
   selectedChatId: Ref<string | null>
   chatSidebar: Ref<{ chats: Chat[]; fetchChats: () => Promise<void> } | null>
@@ -49,6 +9,9 @@ export function useChatLiveUpdates(options: {
 }) {
   const { selectedChatId, chatSidebar, conversationPanel, onChatDisallowed } = options
   const { $orpc } = useNuxtApp()
+  const toast = useToast()
+
+  let controller: AbortController | null = null
 
   function updateSidebarChat(chatId: string, msg: Record<string, unknown>) {
     if (!chatSidebar.value?.chats) return
@@ -116,28 +79,50 @@ export function useChatLiveUpdates(options: {
     () => markSelectedChatAsRead(),
   )
 
-  const globalConnection = createReconnectable('Global live', async (signal) => {
-    const stream = await $orpc.chats.liveAllMessages({}, { signal })
-    for await (const payload of stream) {
-      if (payload.type === 'message' && payload.chatId && payload.data) {
-        updateSidebarChat(payload.chatId, payload.data)
-        if (payload.chatId === selectedChatId.value) {
-          conversationPanel.value?.appendIncomingMessage(payload.data)
-        }
-      } else if (payload.type === 'visibility' && payload.chatId) {
-        handleVisibilityChange(payload.chatId, (payload.data as { allowed?: boolean })?.allowed ?? false)
-      } else if (payload.type === 'respond' && payload.chatId) {
-        handleRespondChange(payload.chatId, (payload.data as { canRespond?: boolean })?.canRespond ?? false)
-      }
-    }
-  })
+  async function connectGlobalLive() {
+    if (controller) controller.abort()
+    controller = new AbortController()
 
-  function connectGlobalLive() {
-    globalConnection.start()
+    try {
+      const stream = await $orpc.chats.liveAllMessages({}, {
+        signal: controller.signal,
+        context: {
+          retry: Number.POSITIVE_INFINITY,
+          shouldRetry: () => true,
+          onRetry: () => {
+            toast.add({ title: 'Reconnecting...', color: 'warning' })
+            return (isSuccess: boolean) => {
+              if (isSuccess) {
+                toast.add({ title: 'Reconnected', color: 'success' })
+              }
+            }
+          },
+        },
+      })
+
+      for await (const payload of stream) {
+        if (payload.type === 'message' && payload.chatId && payload.data) {
+          updateSidebarChat(payload.chatId, payload.data)
+          if (payload.chatId === selectedChatId.value) {
+            conversationPanel.value?.appendIncomingMessage(payload.data)
+          }
+        } else if (payload.type === 'visibility' && payload.chatId) {
+          handleVisibilityChange(payload.chatId, (payload.data as { allowed?: boolean })?.allowed ?? false)
+        } else if (payload.type === 'respond' && payload.chatId) {
+          handleRespondChange(payload.chatId, (payload.data as { canRespond?: boolean })?.canRespond ?? false)
+        }
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') return
+      toast.add({ title: 'Live connection lost', description: err instanceof Error ? err.message : undefined, color: 'error' })
+    }
   }
 
   function disconnectGlobalLive() {
-    globalConnection.stop()
+    if (controller) {
+      controller.abort()
+      controller = null
+    }
   }
 
   onScopeDispose(() => {

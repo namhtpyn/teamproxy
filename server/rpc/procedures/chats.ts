@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ORPCError, eventIterator } from '@orpc/server'
+import { ORPCError, eventIterator, getEventMeta, withEventMeta } from '@orpc/server'
 import { consola } from 'consola'
 import { authed } from '../middleware/auth'
 import { rateLimited } from '../middleware/rate-limit'
@@ -205,19 +205,25 @@ export const chatsRouter = {
         allowedChatIds = new Set(allowed.map((r) => r.chatId))
       }
 
-      for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {
-        if (payload.type === 'visibility' || payload.type === 'respond') {
-          yield payload
-          if (payload.type === 'visibility' && allowedChatIds && payload.chatId) {
-            const data = payload.data as { allowed?: boolean }
-            if (data?.allowed) allowedChatIds.add(payload.chatId)
-            else allowedChatIds.delete(payload.chatId)
+      try {
+        for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {
+          if (payload.type === 'visibility' || payload.type === 'respond') {
+            const meta = getEventMeta(payload)
+            yield meta ? withEventMeta(payload, meta) : payload
+            if (payload.type === 'visibility' && allowedChatIds && payload.chatId) {
+              const data = payload.data as { allowed?: boolean }
+              if (data?.allowed) allowedChatIds.add(payload.chatId)
+              else allowedChatIds.delete(payload.chatId)
+            }
+            continue
           }
-          continue
-        }
 
-        if (allowedChatIds && payload.chatId && !allowedChatIds.has(payload.chatId)) continue
-        yield payload
+          if (allowedChatIds && payload.chatId && !allowedChatIds.has(payload.chatId)) continue
+          const msgMeta = getEventMeta(payload)
+          yield msgMeta ? withEventMeta(payload, msgMeta) : payload
+        }
+      } finally {
+        consola.info('[liveAllMessages] SSE stream closed')
       }
     }),
 }
