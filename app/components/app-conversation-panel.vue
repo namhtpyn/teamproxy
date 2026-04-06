@@ -19,6 +19,7 @@ const messagesError = ref<string | null>(null)
 const hasMore = ref(false)
 const loadingMore = ref(false)
 const msUserId = ref<string | null>(null)
+const pendingSends = new Set<string>()
 
 const messageListRef = ref<{ scrollToBottom: (force?: boolean) => void; isNearBottom: boolean } | null>(null)
 
@@ -110,7 +111,22 @@ function appendIncomingMessage(raw: Record<string, unknown>) {
     content: body?.content ?? '',
     createdDateTime: String(raw.createdDateTime ?? ''),
     sender: fromUser?.user ? { id: fromUser.user.id, displayName: fromUser.user.displayName } : null,
+    eventDetail: (raw.eventDetail as Record<string, unknown>) ?? null,
   }
+
+  // If from own user and we have pending optimistic sends, replace the optimistic entry
+  if (msg.sender?.id && msUserId.value && msg.sender.id === msUserId.value && pendingSends.size > 0) {
+    const idx = messages.value.findIndex(m => m.id.startsWith('temp:'))
+    if (idx !== -1) {
+      const tempId = messages.value[idx]!.id
+      pendingSends.delete(tempId)
+      const updated = [...messages.value]
+      updated[idx] = msg
+      messages.value = updated
+      return
+    }
+  }
+
   if (messages.value.some(m => m.id === msg.id)) return
 
   messages.value = [...messages.value, msg]
@@ -120,6 +136,8 @@ function handleSubmit(payload: { content: string; image: { contentBytes: string;
   if (!props.chat) return
 
   const tempId = `temp:${Date.now()}`
+  pendingSends.add(tempId)
+
   const optimisticMsg: Message = {
     id: tempId,
     replyToId: null,
@@ -143,6 +161,10 @@ function handleSubmit(payload: { content: string; image: { contentBytes: string;
       ? { contentBytes: payload.image.contentBytes, contentType: payload.image.contentType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' }
       : undefined,
   }).then(({ message: real }) => {
+    // SSE may have already replaced the optimistic message — skip if so
+    if (!pendingSends.has(tempId)) return
+    pendingSends.delete(tempId)
+
     const idx = messages.value.findIndex(m => m.id === tempId)
     if (idx !== -1) {
       const updated = [...messages.value]
@@ -150,6 +172,7 @@ function handleSubmit(payload: { content: string; image: { contentBytes: string;
       messages.value = updated
     }
   }).catch((err: unknown) => {
+    pendingSends.delete(tempId)
     const failedMsg = messages.value.find(m => m.id === tempId)
     if (failedMsg) {
       failedMsg.sendFailed = getErrorMessage(err, 'Failed to send')

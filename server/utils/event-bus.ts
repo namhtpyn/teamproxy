@@ -6,9 +6,10 @@ export const liveEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('message'), chatId: z.string(), data: z.object({
     id: z.string(),
     body: z.object({ content: z.string(), contentType: z.string() }).nullable(),
-    from: z.object({ user: z.object({ displayName: z.string() }) }).nullable(),
+    from: z.object({ user: z.object({ id: z.string(), displayName: z.string() }) }).nullable(),
     createdDateTime: z.string(),
     messageType: z.custom<MessageType>(),
+    eventDetail: z.record(z.string(), z.any()).nullable().optional(),
   }).nullable() }),
   z.object({ type: z.literal('error'), chatId: z.string().optional(), data: z.object({ resource: z.string() }).passthrough() }),
   z.object({ type: z.literal('visibility'), chatId: z.string(), data: z.object({ allowed: z.boolean() }) }),
