@@ -1,5 +1,5 @@
 FROM node:25.9.0-alpine AS builder
-RUN corepack enable && corepack prepare pnpm@10.12.4 --activate
+RUN npm install -g pnpm@10.12.4
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
