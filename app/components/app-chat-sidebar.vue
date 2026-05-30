@@ -17,11 +17,11 @@ const chatsLoading = ref(false)
 const chatsError = ref<string | null>(null)
 
 const sortedChats = computed(() =>
-  [...chats.value].sort(
-    (a, b) =>
-      new Date(getLastUpdatedDateTime(b)).getTime() -
-      new Date(getLastUpdatedDateTime(a)).getTime(),
-  ),
+  [...chats.value].sort((a, b) => {
+    const aTime = getLastMessagePreview(a)?.createdDateTime ?? a.lastUpdatedDateTime ?? ''
+    const bTime = getLastMessagePreview(b)?.createdDateTime ?? b.lastUpdatedDateTime ?? ''
+    return new Date(bTime).getTime() - new Date(aTime).getTime()
+  }),
 )
 
 onMounted(() => {

@@ -32,13 +32,15 @@ export default defineEventHandler(async (event) => {
   }
 
   const accessToken = token.accessToken
-  const url = `${GRAPH_BASE}${normalized}`
+  const url = new URL(normalized, `${GRAPH_BASE}/`).toString()
 
   const response = await fetch(url, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
   })
+
+  console.log('[graph-image] Graph response:', response.status, response.statusText)
 
   if (!response.ok) {
     throw createError({ statusCode: response.status, statusMessage: 'Failed to fetch image' })

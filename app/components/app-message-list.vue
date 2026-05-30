@@ -12,6 +12,9 @@ const emit = defineEmits<{
   'load-more': []
   'retry': [tempId: string]
   'react': [payload: { messageId: string; reactionType: string }]
+  'reply': [messageId: string]
+  'edit': [messageId: string]
+  'delete': [messageId: string]
 }>()
 
 const messagesContainer = ref<HTMLElement | null>(null)
@@ -89,6 +92,9 @@ defineExpose({ scrollToBottom, isNearBottom })
            :ms-user-id="msUserId"
            @retry="emit('retry', msg.id!)"
            @react="emit('react', { messageId: msg.id!, reactionType: $event })"
+           @reply="emit('reply', $event)"
+           @edit="emit('edit', $event)"
+           @delete="emit('delete', $event)"
          />
       </div>
     </div>

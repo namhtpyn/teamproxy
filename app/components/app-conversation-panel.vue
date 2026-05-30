@@ -211,7 +211,7 @@ function retryMessage(tempId: string) {
 
 defineExpose({ messagesContainer: messageListRef, refreshMessages, appendIncomingMessage, isNearBottom })
 
-async function handleReaction({ messageId, reactionType }: { messageId: string; reactionType: string }) {
+function handleReaction({ messageId, reactionType }: { messageId: string; reactionType: string }) {
   if (!props.chat) return
   const chatId = props.chat.id!
 
@@ -248,14 +248,26 @@ async function handleReaction({ messageId, reactionType }: { messageId: string; 
 
   try {
     if (sameReaction) {
-      await $orpc.chats.unsetReaction({ chatId, messageId, reactionType })
+      $orpc.chats.unsetReaction({ chatId, messageId, reactionType })
     } else {
       // Graph setReaction auto-replaces previous, no need to unset first
-      await $orpc.chats.setReaction({ chatId, messageId, reactionType })
+      $orpc.chats.setReaction({ chatId, messageId, reactionType })
     }
   } catch (e) {
     console.error('[handleReaction] API call failed:', e, { chatId, messageId, reactionType })
   }
+}
+
+function onReply(messageId: string) {
+  console.log('reply to message', messageId)
+}
+
+function onEdit(messageId: string) {
+  console.log('edit message', messageId)
+}
+
+function onDelete(messageId: string) {
+  console.log('delete message', messageId)
 }
 </script>
 
@@ -307,6 +319,9 @@ async function handleReaction({ messageId, reactionType }: { messageId: string; 
          @load-more="loadMore"
          @retry="retryMessage"
          @react="handleReaction"
+         @reply="onReply"
+         @edit="onEdit"
+         @delete="onDelete"
        />
 
       <AppMessageInput
