@@ -2,12 +2,13 @@ import { consola } from 'consola'
 import { db } from '../db/client'
 import { getActiveToken } from '../db/get-active-token'
 import { createGraphClient } from '../ms-graph/graph-client'
-import { getMsSubscribedChats } from './ms-subscription-store'
+import { getMsSubscribedChats, getLastMessageAt } from './ms-subscription-store'
 import { getAllowedChats } from './allowed-chats'
 import { computeExpiration } from './compute-expiration'
 import { renewMsSubscriptions } from './renew-ms-subscriptions'
 import { createMsSubscription } from './create-ms-subscription'
 import { getWebhookOrigin } from './webhook-origin'
+import { backfillMissedMessages } from './backfill-missed-messages'
 
 export async function ensureMsSubscriptions(): Promise<{ renewed: number; created: number; failed: number }> {
   const now = new Date()
@@ -47,7 +48,17 @@ export async function ensureMsSubscriptions(): Promise<{ renewed: number; create
 
     for (const chat of missing) {
       const result = await createMsSubscription(chat.chatId, token.accessToken)
-      if (result.success) created++
+      if (result.success) {
+        created++
+        const lastMessageAt = getLastMessageAt(chat.chatId)
+        if (lastMessageAt) {
+          try {
+            await backfillMissedMessages(chat.chatId, lastMessageAt, token.accessToken)
+          } catch (err) {
+            consola.error(`[ensure-ms-subscriptions] Backfill failed for ${chat.chatId}:`, err)
+          }
+        }
+      }
       else failed++
     }
   } else {

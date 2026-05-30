@@ -2,7 +2,7 @@
 import type { Chat } from '~/types/chat'
 import { getLastMessagePreview, getLastMessageReadDateTime, getLastUpdatedDateTime } from '~/utils/graph-helpers'
 
-const { $orpc } = useNuxtApp()
+const { $orpcClient: $orpc } = useNuxtApp()
 
 const emit = defineEmits<{
   'select-chat': [chat: Chat]

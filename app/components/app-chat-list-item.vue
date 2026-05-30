@@ -2,6 +2,7 @@
 import type { Chat } from '~/types/chat'
 import { useTimeAgo } from '@vueuse/core'
 import { getLastMessagePreview, getChatType } from '~/utils/graph-helpers'
+import { stripHtml } from '~/utils/chat-helpers'
 
 const props = defineProps<{
   chat: Chat
@@ -18,6 +19,13 @@ const { user } = useAuth()
 const timeAgo = useTimeAgo(
   () => getLastMessagePreview(props.chat)?.createdDateTime ?? Date.now(),
 )
+
+const previewText = computed(() => {
+  const preview = getLastMessagePreview(props.chat)
+  if (!preview?.content) return ''
+  const text = stripHtml(preview.content)
+  return text.length > 50 ? text.slice(0, 50) + '…' : text
+})
 
 </script>
 
@@ -67,6 +75,7 @@ const timeAgo = useTimeAgo(
           </span>
         </div>
       </div>
+      <p v-if="previewText" class="truncate text-xs text-dimmed">{{ previewText }}</p>
     </div>
   </button>
 </template>

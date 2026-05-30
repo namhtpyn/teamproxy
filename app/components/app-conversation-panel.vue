@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { Chat, OptimisticChatMessage } from '~/types/chat'
-import { getChatMembers, getChatType, getEventDetail, getSender, setLastMessagePreview, setLastMessageReadDateTime } from '~/utils/graph-helpers'
+import { getChatMembers, getChatType, getSender, groupReactions } from '~/utils/graph-helpers'
 
 const props = defineProps<{
   chat: Chat | null
@@ -11,7 +11,7 @@ const emit = defineEmits<{
   back: []
 }>()
 
-const { $orpc } = useNuxtApp()
+const { $orpcClient: $orpc } = useNuxtApp()
 const { user } = useAuth()
 const toast = useToast()
 
@@ -173,7 +173,77 @@ function handleSubmit(payload: { content: string; image: { contentBytes: string;
 
 const isNearBottom = computed(() => messageListRef.value?.isNearBottom ?? true)
 
+function retryMessage(tempId: string) {
+  if (!props.chat) return
+
+  const idx = messages.value.findIndex(m => m.id === tempId)
+  if (idx === -1) return
+
+  const failedMsg = messages.value[idx] as OptimisticChatMessage
+  if (!failedMsg.sendFailed) return
+
+  const content = failedMsg.body?.content ?? ''
+  pendingSends.add(tempId)
+  failedMsg.sendFailed = undefined
+
+  $orpc.chats.sendMessage({
+    chatId: props.chat.id!,
+    content,
+  }).then(({ message: real }) => {
+    if (!pendingSends.has(tempId)) return
+    pendingSends.delete(tempId)
+
+    const replaceIdx = messages.value.findIndex(m => m.id === tempId)
+    if (replaceIdx !== -1) {
+      const updated = [...messages.value]
+      updated[replaceIdx] = real as ChatMessage
+      messages.value = updated
+    }
+  }).catch((err: unknown) => {
+    pendingSends.delete(tempId)
+    const retryFailed = messages.value.find(m => m.id === tempId) as OptimisticChatMessage | undefined
+    if (retryFailed) {
+      retryFailed.sendFailed = getErrorMessage(err, 'Failed to send')
+    }
+    toast.add({ title: 'Failed to send message', description: getErrorMessage(err, 'Failed to send message'), color: 'error' })
+  })
+}
+
 defineExpose({ messagesContainer: messageListRef, refreshMessages, appendIncomingMessage, isNearBottom })
+
+async function handleReaction({ messageId, reactionType }: { messageId: string; reactionType: string }) {
+  if (!props.chat) return
+  const chatId = props.chat.id!
+
+  const msg = messages.value.find(m => m.id === messageId)
+  if (!msg) return
+
+  const existing = msg.reactions?.find(
+    r => r.reactionType === reactionType && r.user?.user?.id === msUserId.value,
+  )
+
+  if (existing) {
+    const filtered = msg.reactions?.filter(r => r !== existing)
+    ;(msg as Record<string, unknown>).reactions = filtered?.length ? filtered : undefined
+  } else {
+    if (!msg.reactions) (msg as Record<string, unknown>).reactions = []
+    msg.reactions!.push({
+      reactionType,
+      user: { user: { id: msUserId.value! } },
+      createdDateTime: new Date().toISOString(),
+    })
+  }
+
+  try {
+    if (existing) {
+      await $orpc.chats.unsetReaction({ chatId, messageId, reactionType })
+    } else {
+      await $orpc.chats.setReaction({ chatId, messageId, reactionType })
+    }
+  } catch {
+    // SSE/webhook will deliver correct state
+  }
+}
 </script>
 
 <template>
@@ -216,13 +286,15 @@ defineExpose({ messagesContainer: messageListRef, refreshMessages, appendIncomin
       <AppEmptyState v-else-if="sortedMessages.length === 0" icon="i-lucide-message-circle" message="No messages in this conversation" />
 
       <AppMessageList
-        v-else
-        ref="messageListRef"
-        :messages="sortedMessages"
-        :loading-more="loadingMore"
-        :ms-user-id="msUserId"
-        @load-more="loadMore"
-      />
+         v-else
+         ref="messageListRef"
+         :messages="sortedMessages"
+         :loading-more="loadingMore"
+         :ms-user-id="msUserId"
+         @load-more="loadMore"
+         @retry="retryMessage"
+         @react="handleReaction"
+       />
 
       <AppMessageInput
         :chat-id="chat.id!"

@@ -4,8 +4,8 @@ import { consola } from 'consola'
 import { authed } from '../middleware/auth'
 import { rateLimited } from '../middleware/rate-limit'
 import { createGraphClient, type ODataQueryParams } from '../../ms-graph/graph-client'
-import type { Chat, ChatMessage } from '../../ms-graph/types'
-import { getEventPublisher, liveEventSchema } from '../../utils/event-bus'
+import type { ChatMessage } from '../../ms-graph/types'
+import { getEventPublisher, messageEventSchema, visibilityEventSchema, respondEventSchema, disconnectEventSchema } from '../../utils/event-bus'
 import { getAllowedChats, getAllowedChat } from '../../utils/allowed-chats'
 
 export const chatsRouter = {
@@ -147,7 +147,43 @@ export const chatsRouter = {
       return { message: response as ChatMessage }
     }),
 
-  liveAllMessages: authed.output(eventIterator(liveEventSchema)).handler(async function* ({
+  setReaction: authed
+    .use(rateLimited)
+    .input(
+      z.object({
+        chatId: z.string(),
+        messageId: z.string(),
+        reactionType: z.string(),
+      }),
+    )
+    .handler(async ({ input, context: { accessToken } }) => {
+      const chatAccess = getAllowedChat(input.chatId)
+      if (!chatAccess || !chatAccess.allowed) {
+        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to react in this chat' })
+      }
+      const client = createGraphClient({ accessToken })
+      await client.chats.setReaction(input.chatId, input.messageId, input.reactionType)
+    }),
+
+  unsetReaction: authed
+    .use(rateLimited)
+    .input(
+      z.object({
+        chatId: z.string(),
+        messageId: z.string(),
+        reactionType: z.string(),
+      }),
+    )
+    .handler(async ({ input, context: { accessToken } }) => {
+      const chatAccess = getAllowedChat(input.chatId)
+      if (!chatAccess || !chatAccess.allowed) {
+        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to react in this chat' })
+      }
+      const client = createGraphClient({ accessToken })
+      await client.chats.unsetReaction(input.chatId, input.messageId, input.reactionType)
+    }),
+
+  liveMessages: authed.output(eventIterator(messageEventSchema)).handler(async function* ({
     context,
     signal,
     lastEventId,
@@ -162,23 +198,61 @@ export const chatsRouter = {
 
     try {
       for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {
-        if (payload.type === 'visibility' || payload.type === 'respond') {
-          const meta = getEventMeta(payload)
-          yield meta ? withEventMeta(payload, meta) : payload
-          if (payload.type === 'visibility' && allowedChatIds && payload.chatId) {
-            const data = payload.data as { allowed?: boolean }
-            if (data?.allowed) allowedChatIds.add(payload.chatId)
-            else allowedChatIds.delete(payload.chatId)
-          }
-          continue
-        }
-
+        if (payload.type !== 'message') continue
         if (allowedChatIds && payload.chatId && !allowedChatIds.has(payload.chatId)) continue
-        const msgMeta = getEventMeta(payload)
-        yield msgMeta ? withEventMeta(payload, msgMeta) : payload
+        const meta = getEventMeta(payload)
+        yield meta ? withEventMeta(payload, meta) : payload
       }
     } finally {
-      consola.info('[liveAllMessages] SSE stream closed')
+      consola.info('[liveMessages] SSE stream closed')
+    }
+  }),
+
+  liveVisibility: authed.output(eventIterator(visibilityEventSchema)).handler(async function* ({
+    signal,
+    lastEventId,
+  }) {
+    const publisher = getEventPublisher()
+    try {
+      for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {
+        if (payload.type !== 'visibility') continue
+        const meta = getEventMeta(payload)
+        yield meta ? withEventMeta(payload, meta) : payload
+      }
+    } finally {
+      consola.info('[liveVisibility] SSE stream closed')
+    }
+  }),
+
+  liveRespond: authed.output(eventIterator(respondEventSchema)).handler(async function* ({
+    signal,
+    lastEventId,
+  }) {
+    const publisher = getEventPublisher()
+    try {
+      for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {
+        if (payload.type !== 'respond') continue
+        const meta = getEventMeta(payload)
+        yield meta ? withEventMeta(payload, meta) : payload
+      }
+    } finally {
+      consola.info('[liveRespond] SSE stream closed')
+    }
+  }),
+
+  liveDisconnect: authed.output(eventIterator(disconnectEventSchema)).handler(async function* ({
+    signal,
+    lastEventId,
+  }) {
+    const publisher = getEventPublisher()
+    try {
+      for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {
+        if (payload.type !== 'disconnect') continue
+        const meta = getEventMeta(payload)
+        yield meta ? withEventMeta(payload, meta) : payload
+      }
+    } finally {
+      consola.info('[liveDisconnect] SSE stream closed')
     }
   }),
 }

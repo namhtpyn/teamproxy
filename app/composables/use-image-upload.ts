@@ -4,18 +4,10 @@ export function useImageUpload() {
     contentType: string
     preview: string
   } | null>(null)
-  const fileInputRef = ref<HTMLInputElement | null>(null)
   const imageError = ref<string | null>(null)
 
-  function pickImage() {
-    fileInputRef.value?.click()
-  }
-
-  function handleFileSelect(event: Event) {
+  function processImageFile(file: File) {
     imageError.value = null
-    const input = event.target as HTMLInputElement
-    const file = input.files?.[0]
-    if (!file) return
     if (!file.type.startsWith('image/')) return
     if (file.size > 3 * 1024 * 1024) {
       imageError.value = 'Image must be under 3MB'
@@ -32,7 +24,19 @@ export function useImageUpload() {
       }
     }
     reader.readAsDataURL(file)
-    input.value = ''
+  }
+
+  function handlePaste(event: ClipboardEvent) {
+    const items = event.clipboardData?.items
+    if (!items) return
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        event.preventDefault()
+        const file = item.getAsFile()
+        if (file) processImageFile(file)
+        return
+      }
+    }
   }
 
   function removePendingImage() {
@@ -41,10 +45,8 @@ export function useImageUpload() {
 
   return {
     pendingImage,
-    fileInputRef,
     imageError,
-    pickImage,
-    handleFileSelect,
+    handlePaste,
     removePendingImage,
   }
 }

@@ -11,21 +11,33 @@ interface AuthStatus {
   user: AuthUser | null
 }
 
+type CookieAuthStatus = {
+  authenticated: boolean
+  user: { id: string; displayName: string | null } | null
+} | null
+
 const AUTH_COOKIE_NAME = 'auth'
 const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 
 let inflightPromise: Promise<void> | null = null
 
 export function useAuth() {
-  const { $orpc } = useNuxtApp()
+  const { $orpcClient: $orpc } = useNuxtApp()
 
-  const authCookie = useCookie<AuthStatus | null>(AUTH_COOKIE_NAME, {
+  const authCookie = useCookie<CookieAuthStatus>(AUTH_COOKIE_NAME, {
     maxAge: AUTH_COOKIE_MAX_AGE,
     path: '/',
     sameSite: 'lax',
   })
 
-  const status = useState<AuthStatus | null>('auth:status', () => authCookie.value ?? null)
+  const cookieVal = authCookie.value
+  const status = useState<AuthStatus | null>('auth:status', () => {
+    if (!cookieVal || !cookieVal.authenticated || !cookieVal.user) {
+      return cookieVal ? { authenticated: cookieVal.authenticated, user: null } satisfies AuthStatus : null
+    }
+    // Cookie doesn't store role — role is populated after fetchStatus()
+    return { authenticated: true, user: { ...cookieVal.user, role: undefined as unknown as UserRole } }
+  })
   const loading = useState<boolean>('auth:loading', () => false)
 
   const user = computed(() => status.value?.user ?? null)
@@ -33,7 +45,13 @@ export function useAuth() {
   const isAdmin = computed(() => status.value?.user?.role === 'admin')
 
   function syncCookie() {
-    authCookie.value = status.value
+    const s = status.value
+    if (s?.authenticated && s.user) {
+      const { role: _, ...userWithoutRole } = s.user
+      authCookie.value = { authenticated: true, user: userWithoutRole }
+    } else {
+      authCookie.value = s
+    }
   }
 
   async function doFetchStatus() {
@@ -81,7 +99,7 @@ export function useAuth() {
 
   if (import.meta.client && getCurrentInstance()) {
     onMounted(() => {
-      if (!status.value) {
+      if (!status.value || !status.value.user?.role) {
         fetchStatus()
       }
     })

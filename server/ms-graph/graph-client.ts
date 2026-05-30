@@ -100,6 +100,22 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
           accessToken,
         })
       },
+      async setReaction(chatId: string, messageId: string, reactionType: string): Promise<void> {
+        return graphRequest({
+          method: 'POST',
+          path: `/chats/${chatId}/messages/${messageId}/setReaction`,
+          body: { reactionType },
+          accessToken,
+        })
+      },
+      async unsetReaction(chatId: string, messageId: string, reactionType: string): Promise<void> {
+        return graphRequest({
+          method: 'POST',
+          path: `/chats/${chatId}/messages/${messageId}/unsetReaction`,
+          body: { reactionType },
+          accessToken,
+        })
+      },
     },
     teams: {
       async list(): Promise<Team[]> {

@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
+import { useQueryClient } from '@tanstack/vue-query'
 
 const { user, isAuthenticated, isAdmin, logout } = useAuth()
+const queryClient = useQueryClient()
+
+const reconnecting = computed(() => {
+  const state = queryClient.getQueryState(['chats', 'liveMessages'])
+  return state?.status === 'pending' && state.fetchStatus === 'fetching'
+})
 
 const items = computed<DropdownMenuItem[][]>(() => {
   const menu: DropdownMenuItem[][] = [
@@ -40,6 +47,11 @@ const items = computed<DropdownMenuItem[][]>(() => {
             TeamProxy
           </span>
         </NuxtLink>
+
+        <span v-if="reconnecting" class="flex items-center gap-1 text-xs text-warning">
+          <UIcon name="i-lucide-loader-circle" class="h-3 w-3 animate-spin" />
+          Reconnecting…
+        </span>
 
         <div class="flex-1" />
 

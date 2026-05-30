@@ -5,7 +5,7 @@ import { getActiveToken } from '../../db/get-active-token'
 import { createGraphClient } from '../../ms-graph/graph-client'
 import type { ChatMessage } from '../../ms-graph/types'
 import { liveEventSchema, getEventPublisher } from '../../utils/event-bus'
-import { getMsSubscriptionsByClientStates } from '../../utils/ms-subscription-store'
+import { getMsSubscriptionsByClientStates, updateLastMessageAt } from '../../utils/ms-subscription-store'
 
 // MS Graph resource format: OData chats('id')/messages('id') or REST /chats/id/messages/id
 const CHAT_ID_REGEX = /(?:\/users\/[^/]+)?\/?chats\(?['"]?([^'")\s/]+)['"]?\)?\/messages/
@@ -99,6 +99,9 @@ export default defineEventHandler(async (event) => {
           const parsed = liveEventSchema.safeParse({ type: eventType, data: message, chatId })
           if (parsed.success) {
             publisher.publish('chat:*', parsed.data)
+            if (message.createdDateTime) {
+              updateLastMessageAt(chatId, new Date(message.createdDateTime))
+            }
           } else {
             consola.warn(`[webhook] Event validation failed for ${notification.resource}:`, parsed.error)
           }

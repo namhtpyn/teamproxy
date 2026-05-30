@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { Chat } from '~/types/chat'
+import type { MessageType } from '#shared/utils/enums'
+import { getSender, getLastMessagePreview, setLastMessagePreview, setLastMessageReadDateTime } from '~/utils/graph-helpers'
+import { getSystemEventText } from '~/utils/system-event-text'
 
 useSeoMeta({ title: 'Chats — TeamProxy' })
 
@@ -10,22 +14,119 @@ definePageMeta({
 const { isAuthenticated, loading: authLoading } = useAuth()
 const route = useRoute()
 const router = useRouter()
+const toast = useToast()
 
 const selectedChatId = ref<string | null>(null)
 const currentChat = ref<Chat | null>(null)
+const { images: lightboxImages, index: lightboxIndex, visible: lightboxVisible, close: closeLightbox } = useLightbox()
 const conversationPanel = ref<{ refreshMessages: () => Promise<void>; appendIncomingMessage: (data: Record<string, unknown> | null) => void; isNearBottom: boolean } | null>(null)
 const chatSidebar = ref<{ chats: Chat[]; fetchChats: () => Promise<void> } | null>(null)
 
-const { connectGlobalLive, disconnectGlobalLive } = useChatLiveUpdates({
-  selectedChatId,
-  chatSidebar,
-  conversationPanel,
-  onChatDisallowed() {
-    currentChat.value = null
-    router.replace({ query: {} })
-  },
+// --- Live event subscriptions ---
+const { liveMessageEvent } = useChatMessageEvents()
+const { liveVisibilityEvent } = useChatVisibilityEvents()
+const { liveRespondEvent } = useChatRespondEvents()
+const { liveDisconnectEvent } = useDisconnectEvents()
+
+function updateSidebarChat(chatId: string, msg: Record<string, unknown> | null) {
+  if (!chatSidebar.value?.chats || !msg) return
+  const chat = chatSidebar.value.chats.find(c => c.id === chatId)
+  if (!chat) return
+
+  const chatMsg = msg as ChatMessage
+  const senderName = getSender(chatMsg)?.displayName ?? null
+  const body = chatMsg.body
+  const createdAt = String(chatMsg.createdDateTime ?? new Date().toISOString())
+  const msgType = String(chatMsg.messageType ?? 'message') as MessageType
+
+  let previewContent = body?.content ?? ''
+  if (chatMsg.eventDetail) {
+    previewContent = getSystemEventText(chatMsg.eventDetail as Record<string, unknown>) ?? 'System event'
+  }
+
+  setLastMessagePreview(chat, {
+    id: String(chatMsg.id ?? ''),
+    createdDateTime: createdAt,
+    messageType: msgType,
+    contentType: (body?.contentType ?? 'text') as 'text' | 'html',
+    content: previewContent,
+    senderDisplayName: senderName,
+  })
+
+  chat.lastUpdatedDateTime = createdAt
+
+  if (chatId === selectedChatId.value && conversationPanel.value?.isNearBottom) {
+    setLastMessageReadDateTime(chat, createdAt)
+  }
+}
+
+function handleVisibilityChange(chatId: string, allowed: boolean) {
+  if (!chatSidebar.value?.chats) return
+  const chats = chatSidebar.value.chats
+
+  if (!allowed) {
+    const idx = chats.findIndex(c => c.id === chatId)
+    if (idx !== -1) chats.splice(idx, 1)
+    if (chatId === selectedChatId.value) {
+      selectedChatId.value = null
+      currentChat.value = null
+      router.replace({ query: {} })
+    }
+  } else {
+    chatSidebar.value.fetchChats()
+  }
+}
+
+function handleRespondChange(chatId: string, canRespond: boolean) {
+  if (!chatSidebar.value?.chats) return
+  const chat = chatSidebar.value.chats.find(c => c.id === chatId)
+  if (chat) chat.canRespond = canRespond
+}
+
+function markSelectedChatAsRead() {
+  if (!selectedChatId.value || !chatSidebar.value?.chats) return
+  if (!conversationPanel.value?.isNearBottom) return
+  const chat = chatSidebar.value.chats.find(c => c.id === selectedChatId.value)
+  const preview = getLastMessagePreview(chat!)
+  if (!chat || !preview) return
+  setLastMessageReadDateTime(chat, preview.createdDateTime)
+}
+
+// --- Watchers for live events ---
+watch(liveMessageEvent, (event) => {
+  if (!event) return
+  updateSidebarChat(event.chatId, event.data)
+  if (event.chatId === selectedChatId.value) {
+    conversationPanel.value?.appendIncomingMessage(event.data)
+  }
 })
 
+watch(liveVisibilityEvent, (event) => {
+  if (!event) return
+  handleVisibilityChange(event.chatId, event.data.allowed)
+})
+
+watch(liveRespondEvent, (event) => {
+  if (!event) return
+  handleRespondChange(event.chatId, event.data.canRespond)
+})
+
+watch(liveDisconnectEvent, (event) => {
+  if (!event) return
+  toast.add({
+    title: 'Teams connection is offline. Chats show last-known messages.',
+    color: 'warning',
+    duration: 0,
+    close: true,
+  })
+})
+
+watch(
+  [() => conversationPanel.value?.isNearBottom, selectedChatId],
+  () => markSelectedChatAsRead(),
+)
+
+// --- Navigation ---
 function goBack() {
   selectedChatId.value = null
   currentChat.value = null
@@ -38,7 +139,6 @@ function selectChat(chat: Chat) {
 }
 
 onMounted(() => {
-  connectGlobalLive()
   restoreFromQuery()
 })
 
@@ -59,21 +159,22 @@ function restoreFromQuery() {
   )
 }
 
-onUnmounted(() => {
-  disconnectGlobalLive()
+watch(selectedChatId, () => {
+  closeLightbox()
 })
 </script>
 
 <template>
-  <div v-if="authLoading" class="flex h-dvh items-center justify-center">
-    <AppLoadingSpinner />
-  </div>
+  <div class="h-full">
+    <div v-if="authLoading" class="flex h-dvh items-center justify-center">
+      <AppLoadingSpinner />
+    </div>
 
-  <div v-else-if="!isAuthenticated" class="flex h-dvh items-center justify-center">
-    <p class="text-sm text-muted">Redirecting...</p>
-  </div>
+    <div v-else-if="!isAuthenticated" class="flex h-dvh items-center justify-center">
+      <p class="text-sm text-muted">Redirecting...</p>
+    </div>
 
-  <div v-else class="flex h-full">
+    <div v-else class="flex h-full">
       <AppChatSidebar
         ref="chatSidebar"
         :selected-chat-id="selectedChatId"
@@ -89,4 +190,14 @@ onUnmounted(() => {
         @back="goBack"
       />
     </div>
+
+    <ClientOnly>
+      <VueEasyLightbox
+        :visible="lightboxVisible"
+        :imgs="lightboxImages"
+        :index="lightboxIndex"
+        @hide="closeLightbox"
+      />
+    </ClientOnly>
+  </div>
 </template>

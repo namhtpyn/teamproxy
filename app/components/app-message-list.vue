@@ -10,6 +10,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'load-more': []
+  'retry': [tempId: string]
+  'react': [payload: { messageId: string; reactionType: string }]
 }>()
 
 const messagesContainer = ref<HTMLElement | null>(null)
@@ -81,11 +83,13 @@ defineExpose({ scrollToBottom, isNearBottom })
       </div>
       <div class="mx-auto max-w-3xl space-y-4">
         <AppMessageBubble
-          v-for="msg in messages"
-          :key="msg.id"
-          :msg="msg"
-          :ms-user-id="msUserId"
-        />
+           v-for="msg in messages"
+           :key="msg.id"
+           :msg="msg"
+           :ms-user-id="msUserId"
+           @retry="emit('retry', msg.id!)"
+           @react="emit('react', { messageId: msg.id!, reactionType: $event })"
+         />
       </div>
     </div>
 

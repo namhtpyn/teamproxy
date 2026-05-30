@@ -1,11 +1,12 @@
 import { eq } from 'drizzle-orm'
-import { USER_ROLES } from '#shared/utils/enums'
 import { base } from '../context'
 import { adminOnly } from '../middleware/auth'
 import { db } from '../../db/client'
 import { oauthTokens } from '../../db/schema'
 import { MS_SCOPE_STRING } from '../../ms-graph/scopes'
 import { getActiveToken } from '../../db/get-active-token'
+import { disconnectAllSubscriptions } from '../../utils/disconnect-all-subscriptions'
+import { getEventPublisher } from '../../utils/event-bus'
 
 export const authRouter = {
   getStatus: base.handler(async ({ context: { username, role } }) => {
@@ -56,6 +57,14 @@ export const authRouter = {
   }),
 
   disconnectMs: adminOnly.handler(async () => {
+    await disconnectAllSubscriptions()
+
+    const publisher = getEventPublisher()
+    publisher.publish('chat:*', {
+      type: 'disconnect' as const,
+      data: { reason: 'Teams connection disconnected by admin' },
+    })
+
     db.update(oauthTokens).set({ isActive: false }).where(eq(oauthTokens.isActive, true)).run()
 
     return { success: true }

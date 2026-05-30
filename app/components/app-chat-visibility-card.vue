@@ -4,7 +4,7 @@ import type { ChatType } from '#shared/utils/enums'
 import type { VisibilityChat, VisibilityChatRow } from '~/types/chat'
 import { getChatMembers, getChatTopic, getChatType } from '~/utils/graph-helpers'
 
-const { $orpc } = useNuxtApp()
+const { $orpcClient: $orpc } = useNuxtApp()
 const toast = useToast()
 
 const chats = ref<VisibilityChat[]>([])

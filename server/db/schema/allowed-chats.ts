@@ -14,6 +14,7 @@ export const allowedChats = sqliteTable(
     msSubscriptionId: text('ms_subscription_id').unique(),
     clientState: text('client_state'),
     subscriptionExpiresAt: integer('subscription_expires_at', { mode: 'timestamp' }),
+    lastMessageAt: integer('last_message_at', { mode: 'timestamp' }),
     createdAt: integer('created_at', { mode: 'timestamp' }).defaultNow().notNull(),
   },
   (table) => [

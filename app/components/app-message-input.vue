@@ -12,7 +12,8 @@ const emit = defineEmits<{
   submit: [payload: { content: string; image: { contentBytes: string; contentType: string } | null; mentions: Array<{ userId: string; displayName: string }> | undefined }]
 }>()
 
-const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const uTextareaRef = ref<{ textareaRef?: HTMLTextAreaElement } | null>(null)
+const textareaRef = computed(() => uTextareaRef.value?.textareaRef ?? null)
 const newMessage = ref('')
 
 const {
@@ -28,10 +29,8 @@ const {
 
 const {
   pendingImage,
-  fileInputRef,
   imageError,
-  pickImage,
-  handleFileSelect,
+  handlePaste,
   removePendingImage,
 } = useImageUpload()
 
@@ -94,21 +93,11 @@ watch(() => props.chatId, () => {
           </button>
         </div>
       </div>
+      <p v-if="imageError" class="mt-1 text-xs text-error">{{ imageError }}</p>
       <div class="flex items-end gap-2">
-        <input id="image-upload" ref="fileInputRef" type="file" accept="image/*" aria-label="Upload image" class="hidden" @change="handleFileSelect">
-        <UButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-label="Attach image"
-          class="h-[38px] flex-shrink-0"
-          @click="pickImage"
-        >
-          <UIcon name="i-lucide-image-plus" class="h-4 w-4" />
-        </UButton>
         <div class="relative flex-1">
           <UTextarea
-            ref="textareaRef"
+            ref="uTextareaRef"
             v-model="newMessage"
             placeholder="Type a message..."
             aria-label="Type a message"
@@ -121,6 +110,7 @@ watch(() => props.chatId, () => {
             :aria-expanded="mentionVisible"
             @input="handleTextareaInput"
             @keydown="handleKeydown"
+            @paste="handlePaste"
           />
           <AppMentionPicker
             ref="mentionPickerRef"

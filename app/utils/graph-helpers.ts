@@ -89,3 +89,46 @@ export function setLastMessageReadDateTime(chat: Chat, dateTime: string): void {
     chat.viewpoint.lastMessageReadDateTime = dateTime
   }
 }
+
+// Map legacy reaction type strings to unicode emoji
+const REACTION_TYPE_MAP: Record<string, string> = {
+  like: '👍',
+  heart: '❤️',
+  laugh: '😂',
+  surprised: '😮',
+  sad: '😢',
+  angry: '😡',
+}
+
+export function resolveReactionEmoji(reactionType: string): string {
+  if (reactionType.length > 2 || /[\u{1F000}-\u{1FFFF}]/u.test(reactionType)) return reactionType
+  return REACTION_TYPE_MAP[reactionType] ?? reactionType
+}
+
+export interface GroupedReaction {
+  emoji: string
+  reactionType: string
+  count: number
+  hasOwn: boolean
+}
+
+export function groupReactions(
+  reactions: Array<{ reactionType?: string | null; user?: { user?: { id?: string | null } } }> | undefined,
+  msUserId?: string | null,
+): GroupedReaction[] {
+  if (!reactions?.length) return []
+  const map = new Map<string, GroupedReaction>()
+  for (const r of reactions) {
+    const raw = r.reactionType ?? ''
+    const emoji = resolveReactionEmoji(raw)
+    const existing = map.get(raw)
+    const isOwn = !!msUserId && r.user?.user?.id === msUserId
+    if (existing) {
+      existing.count++
+      if (isOwn) existing.hasOwn = true
+    } else {
+      map.set(raw, { emoji, reactionType: raw, count: 1, hasOwn: isOwn })
+    }
+  }
+  return Array.from(map.values())
+}

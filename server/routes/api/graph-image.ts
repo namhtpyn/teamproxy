@@ -10,6 +10,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 429, message: 'Too many image requests' })
   }
 
+  const rawSession = getCookie(event, 'session') ?? undefined
+  const session = rawSession ? await resolveSession(rawSession) : undefined
+  if (!session) {
+    throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
+  }
+
   const { path } = getQuery(event)
   if (!path || typeof path !== 'string') {
     throw createError({ statusCode: 400, statusMessage: 'Missing path parameter' })

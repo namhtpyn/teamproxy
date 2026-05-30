@@ -6,6 +6,7 @@ useSeoMeta({ title: 'Sign In — TeamProxy' })
 
 definePageMeta({
   layout: 'auth',
+  auth: false,
 })
 
 const schema = z.object({

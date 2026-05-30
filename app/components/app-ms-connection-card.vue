@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { $orpc } = useNuxtApp()
+const { $orpcClient: $orpc } = useNuxtApp()
 
 
 const msConnected = ref(false)

@@ -71,6 +71,19 @@ export function updateMsSubscription(
   db.update(allowedChats).set(patch).where(eq(allowedChats.chatId, chatId)).run()
 }
 
+export function updateLastMessageAt(chatId: string, timestamp: Date): void {
+  db.update(allowedChats).set({ lastMessageAt: timestamp }).where(eq(allowedChats.chatId, chatId)).run()
+}
+
+export function getLastMessageAt(chatId: string): Date | null {
+  const row = db
+    .select({ lastMessageAt: allowedChats.lastMessageAt })
+    .from(allowedChats)
+    .where(eq(allowedChats.chatId, chatId))
+    .get()
+  return row?.lastMessageAt ?? null
+}
+
 export function clearMsSubscription(chatId: string): void {
   db.update(allowedChats)
     .set({ msSubscriptionId: null, clientState: null, subscriptionExpiresAt: null })

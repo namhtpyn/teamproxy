@@ -22,7 +22,7 @@ const requireSession = base.middleware(async ({ context: { username }, next }) =
 function resolveTokenWithRole(role: UserRole) {
   return base.middleware(async ({ context, next }) => {
     const token = resolveActiveToken(context.db)
-    return next({ context: { username: context.username!, accessToken: token.accessToken, role } })
+    return next({ context: { username: context.username!, accessToken: token.accessToken, role: context.role ?? role } })
   })
 }
 
