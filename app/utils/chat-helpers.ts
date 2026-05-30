@@ -18,11 +18,13 @@ export function stripHtml(html: string): string {
 export function getChatDisplayName(chat: Chat, currentUserId?: string | null): string {
   const topic = getChatTopic(chat)
   if (topic) return topic
+  if (!currentUserId) return ''
   const members = getChatMembers(chat)
   const other = members.find((m) => m.userId !== currentUserId)
   return other?.displayName ?? 'Unknown'
 }
 
 export function getChatInitial(chat: Chat, currentUserId?: string | null): string {
-  return getChatDisplayName(chat, currentUserId).charAt(0).toUpperCase()
+  const name = getChatDisplayName(chat, currentUserId)
+  return name ? name.charAt(0).toUpperCase() : ''
 }

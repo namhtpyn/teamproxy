@@ -15,6 +15,11 @@ const { $orpcClient: $orpc } = useNuxtApp()
 const { user } = useAuth()
 const toast = useToast()
 
+const displayName = computed(() => getChatDisplayName(props.chat!, user.value?.id))
+const initial = computed(() => getChatInitial(props.chat!, user.value?.id))
+const chatType = computed(() => getChatType(props.chat!))
+const chatMembers = computed(() => getChatMembers(props.chat!))
+
 type MessageItem = ChatMessage | OptimisticChatMessage
 const messages = ref<MessageItem[]>([])
 const messagesLoading = ref(false)
@@ -24,6 +29,7 @@ const loadingMore = ref(false)
 const msUserId = ref<string | null>(null)
 const pendingSends = new Set<string>()
 
+const replyingTo = ref<MessageItem | null>(null)
 const messageListRef = ref<{ scrollToBottom: (force?: boolean) => void; isNearBottom: boolean } | null>(null)
 
 const sortedMessages = computed(() =>
@@ -86,6 +92,7 @@ onMounted(fetchMsUserId)
 watch(
   () => props.chat?.id,
   (newId, oldId) => {
+    replyingTo.value = null
     if (newId && newId !== oldId) {
       loadMessages()
     }
@@ -125,7 +132,7 @@ function appendIncomingMessage(raw: Record<string, unknown>) {
   messages.value = [...messages.value, msg]
 }
 
-function handleSubmit(payload: { content: string; image: { contentBytes: string; contentType: string } | null; mentions: Array<{ userId: string; displayName: string }> | undefined }) {
+function handleSubmit(payload: { content: string; image: { contentBytes: string; contentType: string } | null; mentions: Array<{ userId: string; displayName: string }> | undefined; replyToId?: string }) {
   if (!props.chat) return
 
   const tempId = `temp:${Date.now()}`
@@ -142,11 +149,13 @@ function handleSubmit(payload: { content: string; image: { contentBytes: string;
   }
 
   messages.value = [...messages.value, optimisticMsg]
+  replyingTo.value = null
   nextTick(() => messageListRef.value?.scrollToBottom(true))
 
   $orpc.chats.sendMessage({
     chatId: props.chat.id!,
     content: payload.content,
+    replyToId: payload.replyToId,
     mentions: payload.mentions,
     image: payload.image
       ? { contentBytes: payload.image.contentBytes, contentType: payload.image.contentType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' }
@@ -259,7 +268,12 @@ function handleReaction({ messageId, reactionType }: { messageId: string; reacti
 }
 
 function onReply(messageId: string) {
-  console.log('reply to message', messageId)
+  const msg = messages.value.find(m => m.id === messageId)
+  if (msg) replyingTo.value = msg
+}
+
+function clearReply() {
+  replyingTo.value = null
 }
 
 function onEdit(messageId: string) {
@@ -287,18 +301,18 @@ function onDelete(messageId: string) {
             @click="emit('back')"
           />
           <UAvatar size="2xs" class="flex-shrink-0">
-            {{ getChatInitial(chat, user?.id) }}
+            {{ initial }}
           </UAvatar>
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-semibold text-highlighted">
-              {{ getChatDisplayName(chat, user?.id) }}
+              {{ displayName }}
             </p>
-            <p v-if="getChatType(chat) !== 'oneOnOne'" class="text-xs text-dimmed">
-              {{ getChatMembers(chat).length }} members
+            <p v-if="chatType !== 'oneOnOne'" class="text-xs text-dimmed">
+              {{ chatMembers.length }} members
             </p>
           </div>
-          <UBadge v-if="getChatType(chat) === 'meeting'" color="info" variant="outline" size="xs">Meeting</UBadge>
-          <UBadge v-else-if="getChatType(chat) === 'group'" color="neutral" variant="outline" size="xs">Group</UBadge>
+          <UBadge v-if="chatType === 'meeting'" color="info" variant="outline" size="xs">Meeting</UBadge>
+          <UBadge v-else-if="chatType === 'group'" color="neutral" variant="outline" size="xs">Group</UBadge>
         </div>
       </div>
 
@@ -326,10 +340,12 @@ function onDelete(messageId: string) {
 
       <AppMessageInput
         :chat-id="chat.id!"
-        :members="getChatMembers(chat)"
+        :members="chatMembers"
         :ms-user-id="msUserId"
         :disabled="!chat.canRespond"
+        :replying-to="replyingTo"
         @submit="handleSubmit"
+        @cancel-reply="clearReply"
       />
     </template>
   </div>

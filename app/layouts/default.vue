@@ -5,6 +5,9 @@ import { useQueryClient } from '@tanstack/vue-query'
 const { user, isAuthenticated, isAdmin, logout } = useAuth()
 const queryClient = useQueryClient()
 
+const userInitial = computed(() => user.value?.displayName?.charAt(0)?.toUpperCase() ?? '')
+const userDisplayName = computed(() => user.value?.displayName ?? '')
+
 const reconnecting = computed(() => {
   const state = queryClient.getQueryState(['chats', 'liveMessages'])
   return state?.status === 'pending' && state.fetchStatus === 'fetching'
@@ -57,8 +60,8 @@ const items = computed<DropdownMenuItem[][]>(() => {
 
         <UDropdownMenu v-if="isAuthenticated" :items="items" :content="{ align: 'end' }">
           <UButton color="neutral" variant="ghost" size="sm">
-            <UAvatar :alt="user?.displayName ?? ''" size="2xs">
-              {{ user?.displayName?.charAt(0)?.toUpperCase() ?? 'U' }}
+            <UAvatar :alt="userDisplayName" size="2xs">
+              {{ userInitial || 'U' }}
             </UAvatar>
           </UButton>
         </UDropdownMenu>

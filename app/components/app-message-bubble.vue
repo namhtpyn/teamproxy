@@ -5,10 +5,10 @@ import type { OptimisticChatMessage } from '~/types/chat'
 import { getEventDetail, getMessageContent, getSender, groupReactions } from '~/utils/graph-helpers'
 import { onClickOutside } from '@vueuse/core'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   msg: ChatMessage | OptimisticChatMessage
   msUserId?: string | null
-}>()
+}>(), {})
 
 const emit = defineEmits<{
   retry: []
@@ -25,6 +25,22 @@ const isSystemEvent = computed(() => !!getEventDetail(props.msg))
 const systemEventInfo = computed(() => getSystemEventInfo(getEventDetail(props.msg)))
 
 const content = computed(() => getMessageContent(props.msg))
+
+const replyReference = computed(() => {
+  const attachments = (props.msg as ChatMessage).attachments
+  if (!attachments || attachments.length === 0) return null
+  const msgRef = attachments.find(a => a.contentType === 'messageReference')
+  if (!msgRef) return null
+  try {
+    const data = typeof msgRef.content === 'string' ? JSON.parse(msgRef.content) : msgRef.content
+    return {
+      senderName: data?.messageSender?.user?.displayName ?? 'Unknown',
+      previewText: (data?.messagePreview ?? '').replace(/<[^>]*>/g, '').trim().slice(0, 80),
+    }
+  } catch {
+    return null
+  }
+})
 
 const renderedContent = computed(() => {
   if (!content.value) return ''
@@ -138,6 +154,10 @@ const messageTime = computed(() => formatMessageTime(props.msg.createdDateTime ?
           {{ messageTime }}
         </span>
         <div class="rounded-2xl px-3.5 py-2" :class="sendFailed ? 'bg-red-500/15 ring-1 ring-red-500/30' : 'bg-accented'">
+          <div v-if="replyReference" class="mb-1.5 border-l-2 border-primary/40 pl-2">
+            <p class="text-[11px] font-medium text-primary/80">{{ replyReference.senderName }}</p>
+            <p class="truncate text-[11px] text-dimmed">{{ replyReference.previewText }}</p>
+          </div>
           <div v-if="hasRenderedContent" data-message-content class="break-words text-sm leading-relaxed text-highlighted" v-html="renderedContent" @click="handleContentClick" />
         </div>
         <div v-if="reactionGroups.length || canReact" ref="pickerRef" class="relative -mt-1.5 mb-1 flex items-center gap-0.5 justify-end">
@@ -199,6 +219,10 @@ const messageTime = computed(() => formatMessageTime(props.msg.createdDateTime ?
             </span>
           </div>
           <div class="rounded-2xl px-3.5 py-2" :class="sendFailed ? 'bg-red-500/15 ring-1 ring-red-500/30' : 'bg-elevated'">
+            <div v-if="replyReference" class="mb-1.5 border-l-2 border-primary/40 pl-2">
+              <p class="text-[11px] font-medium text-primary/80">{{ replyReference.senderName }}</p>
+              <p class="truncate text-[11px] text-dimmed">{{ replyReference.previewText }}</p>
+            </div>
             <div v-if="hasRenderedContent" data-message-content class="break-words text-sm leading-relaxed text-highlighted" v-html="renderedContent" @click="handleContentClick" />
           </div>
           <div v-if="reactionGroups.length || canReact" ref="pickerRef" class="relative -mt-1.5 mb-1 flex items-center gap-0.5">

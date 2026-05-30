@@ -1,15 +1,20 @@
 <script setup lang="ts">
-import type { ChatMember } from '~/types/chat'
+import type { ChatMessage } from '@microsoft/microsoft-graph-types'
+import type { ChatMember, OptimisticChatMessage } from '~/types/chat'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   chatId: string
   members: ChatMember[]
   msUserId?: string | null
   disabled: boolean
-}>()
+  replyingTo?: ChatMessage | OptimisticChatMessage | null
+}>(), {
+  replyingTo: null,
+})
 
 const emit = defineEmits<{
-  submit: [payload: { content: string; image: { contentBytes: string; contentType: string } | null; mentions: Array<{ userId: string; displayName: string }> | undefined }]
+  submit: [payload: { content: string; image: { contentBytes: string; contentType: string } | null; mentions: Array<{ userId: string; displayName: string }> | undefined; replyToId?: string }]
+  'cancel-reply': []
 }>()
 
 const uTextareaRef = ref<{ textareaRef?: HTMLTextAreaElement } | null>(null)
@@ -33,6 +38,21 @@ const {
   handlePaste,
   removePendingImage,
 } = useImageUpload()
+
+const replyPreviewText = computed(() => {
+  if (!props.replyingTo) return ''
+  const content = props.replyingTo.body?.content ?? ''
+  return content
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60)
+})
+
+const replySenderName = computed(() => {
+  if (!props.replyingTo) return ''
+  return (props.replyingTo as ChatMessage).from?.user?.displayName ?? 'Unknown'
+})
 
 function handleKeydown(e: KeyboardEvent) {
   if (handleMentionKeydown(e)) return
@@ -63,7 +83,7 @@ function sendMessage() {
   resetMentions()
   pendingImage.value = null
 
-  emit('submit', { content, image, mentions })
+  emit('submit', { content, image, mentions, replyToId: props.replyingTo?.id?.startsWith('temp:') ? undefined : props.replyingTo?.id })
 }
 
 watch(() => props.chatId, () => {
@@ -80,6 +100,16 @@ watch(() => props.chatId, () => {
       class="mx-auto flex max-w-3xl flex-col gap-2"
       @submit.prevent="sendMessage"
     >
+      <div v-if="replyingTo" class="flex items-center gap-2 rounded-lg bg-elevated px-3 py-2">
+        <UIcon name="i-lucide-reply" class="h-4 w-4 flex-shrink-0 text-dimmed" />
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-xs font-medium text-highlighted">{{ replySenderName }}</p>
+          <p class="truncate text-xs text-dimmed">{{ replyPreviewText }}</p>
+        </div>
+        <button type="button" class="flex-shrink-0 text-dimmed hover:text-highlighted" @click="emit('cancel-reply')">
+          <UIcon name="i-lucide-x" class="h-3.5 w-3.5" />
+        </button>
+      </div>
       <div v-if="pendingImage" class="mx-auto w-full max-w-3xl">
         <div class="relative inline-block">
           <img :src="pendingImage.preview" alt="" class="max-h-40 rounded-lg object-contain">

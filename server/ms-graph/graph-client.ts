@@ -86,6 +86,17 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
           accessToken,
         })
       },
+      async replyWithQuote(chatId: string, messageId: string, body: { contentType: string; content: string }): Promise<ChatMessage | undefined> {
+        return graphRequest<ChatMessage>({
+          method: 'POST',
+          path: `/chats/${chatId}/messages/replyWithQuote`,
+          body: {
+            messageIds: [messageId],
+            replyMessage: { body },
+          },
+          accessToken,
+        })
+      },
       getMessage(resource: string): Promise<unknown> {
         let apiPath: string
         if (resource.startsWith('/')) {

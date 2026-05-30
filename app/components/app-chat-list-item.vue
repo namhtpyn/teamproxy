@@ -16,6 +16,10 @@ const emit = defineEmits<{
 
 const { user } = useAuth()
 
+const displayName = computed(() => getChatDisplayName(props.chat, user.value?.id))
+const initial = computed(() => getChatInitial(props.chat, user.value?.id))
+const chatType = computed(() => getChatType(props.chat))
+
 const timeAgo = useTimeAgo(
   () => getLastMessagePreview(props.chat)?.createdDateTime ?? Date.now(),
 )
@@ -42,7 +46,7 @@ const previewText = computed(() => {
     @click="emit('select')"
   >
     <UAvatar class="flex-shrink-0" size="sm">
-            {{ getChatInitial(props.chat, user?.id) }}
+            {{ initial }}
     </UAvatar>
 
     <div class="min-w-0 flex-1">
@@ -52,15 +56,15 @@ const previewText = computed(() => {
             class="truncate text-sm text-highlighted"
             :class="props.isUnread ? 'font-semibold' : 'font-medium'"
           >
-            {{ getChatDisplayName(props.chat, user?.id) }}
+            {{ displayName }}
           </span>
           <UIcon
-            v-if="getChatType(props.chat) === 'group'"
+            v-if="chatType === 'group'"
             name="i-lucide-users"
             class="h-3 w-3 flex-shrink-0 text-dimmed"
           />
           <UIcon
-            v-else-if="getChatType(props.chat) === 'meeting'"
+            v-else-if="chatType === 'meeting'"
             name="i-lucide-video"
             class="h-3 w-3 flex-shrink-0 text-dimmed"
           />

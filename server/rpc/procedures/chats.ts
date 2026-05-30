@@ -136,13 +136,19 @@ export const chatsRouter = {
           ]
         : undefined
 
-      const response = await client.chats.send(
-        input.chatId,
-        { contentType, content },
-        input.replyToId,
-        mentions,
-        hostedContents,
-      )
+      let response: ChatMessage | undefined
+
+      if (input.replyToId && !hasImage && !hasMentions) {
+        response = await client.chats.replyWithQuote(input.chatId, input.replyToId, { contentType, content })
+      } else {
+        response = await client.chats.send(
+          input.chatId,
+          { contentType, content },
+          undefined,
+          mentions,
+          hostedContents,
+        )
+      }
 
       return { message: response as ChatMessage }
     }),
