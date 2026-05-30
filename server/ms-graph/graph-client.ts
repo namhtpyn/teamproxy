@@ -101,7 +101,7 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
         })
       },
       async setReaction(chatId: string, messageId: string, reactionType: string): Promise<void> {
-        return graphRequest({
+        await graphRequest({
           method: 'POST',
           path: `/chats/${chatId}/messages/${messageId}/setReaction`,
           body: { reactionType },
@@ -109,7 +109,7 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
         })
       },
       async unsetReaction(chatId: string, messageId: string, reactionType: string): Promise<void> {
-        return graphRequest({
+        await graphRequest({
           method: 'POST',
           path: `/chats/${chatId}/messages/${messageId}/unsetReaction`,
           body: { reactionType },

@@ -240,8 +240,8 @@ async function handleReaction({ messageId, reactionType }: { messageId: string; 
     } else {
       await $orpc.chats.setReaction({ chatId, messageId, reactionType })
     }
-  } catch {
-    // SSE/webhook will deliver correct state
+  } catch (e) {
+    console.error('[handleReaction] API call failed:', e, { chatId, messageId, reactionType })
   }
 }
 </script>
