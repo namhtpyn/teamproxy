@@ -218,14 +218,26 @@ async function handleReaction({ messageId, reactionType }: { messageId: string; 
   const msg = messages.value.find(m => m.id === messageId)
   if (!msg) return
 
-  const existing = msg.reactions?.find(
+  // Graph allows only ONE reaction per user per message.
+  // If user already has this reaction → toggle off (unset).
+  // If user has a DIFFERENT reaction → Graph replaces it, so remove old optimistically first.
+  const sameReaction = msg.reactions?.find(
     r => r.reactionType === reactionType && r.user?.user?.id === msUserId.value,
   )
+  const prevReaction = msg.reactions?.find(
+    r => r.reactionType !== reactionType && r.user?.user?.id === msUserId.value,
+  )
 
-  if (existing) {
-    const filtered = msg.reactions?.filter(r => r !== existing)
+  if (sameReaction) {
+    // Toggle off: remove this reaction
+    const filtered = msg.reactions?.filter(r => r !== sameReaction)
     ;(msg as Record<string, unknown>).reactions = filtered?.length ? filtered : undefined
   } else {
+    // Adding new: remove previous reaction first (Graph replaces)
+    if (prevReaction) {
+      const filtered = msg.reactions?.filter(r => r !== prevReaction)
+      ;(msg as Record<string, unknown>).reactions = filtered?.length ? filtered : undefined
+    }
     if (!msg.reactions) (msg as Record<string, unknown>).reactions = []
     msg.reactions!.push({
       reactionType,
@@ -235,9 +247,10 @@ async function handleReaction({ messageId, reactionType }: { messageId: string; 
   }
 
   try {
-    if (existing) {
+    if (sameReaction) {
       await $orpc.chats.unsetReaction({ chatId, messageId, reactionType })
     } else {
+      // Graph setReaction auto-replaces previous, no need to unset first
       await $orpc.chats.setReaction({ chatId, messageId, reactionType })
     }
   } catch (e) {

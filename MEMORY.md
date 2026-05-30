@@ -12,7 +12,7 @@ MS Teams chat proxy (TeamProxy). Nuxt 4 + oRPC + Vue 3 + TanStack Vue Query + MS
 
 ## Graph API
 - Reaction types use unicode emoji: `👍`, `❤️`, `😂`, `😮`, `😢`, `😡`
-- Legacy names (`like`, `heart`) NOT used by Graph v1.0 API
+- **CRITICAL: Graph allows only ONE reaction per user per message.** `setReaction` auto-replaces previous reaction. Optimistic update must remove old reaction before adding new.
 - `setReaction`/`unsetReaction` POST returns 204 (no body) → `graphRequest` returns `undefined`
 - Webhook/SSE delivers updated message with new reaction state
 
