@@ -28,6 +28,7 @@
     "@orpc/tanstack-query": "1.14.4",
     "@tanstack/vue-query": "5.100.14",
     "@vueuse/core": "14.3.0",
+    "dompurify": "^3.4.7",
     "drizzle-orm": "1.0.0-rc.3",
     "nuxt": "4.4.6",
     "nuxt-easy-lightbox": "1.1.0",
@@ -38,10 +39,11 @@
   },
   "devDependencies": {
     "@nuxt/eslint-config": "1.15.2",
+    "@types/dompurify": "^3.2.0",
+    "@types/node": "25.9.1",
     "drizzle-kit": "1.0.0-rc.3",
     "typescript": "6.0.3",
     "vite": "8.0.14",
-    "vue-tsc": "3.3.2",
-    "@types/node": "25.9.1"
+    "vue-tsc": "3.3.2"
   }
 }

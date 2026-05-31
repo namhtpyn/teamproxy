@@ -34,6 +34,7 @@ const emit = defineEmits<{
         v-for="r in STANDARD_REACTIONS"
         :key="r.type"
         type="button"
+        :aria-label="`React with ${r.emoji}`"
         class="flex h-8 w-8 items-center justify-center rounded-full text-lg transition-transform hover:bg-elevated active:scale-110"
         @click="emit('select', r.type)"
       >

@@ -1,25 +1,21 @@
 <script setup lang="ts">
+import { useAsyncState } from '@vueuse/core'
+
 const { $orpcClient: $orpc } = useNuxtApp()
+const toast = useToast()
 
-
-const msConnected = ref(false)
-const msExpiresAt = ref<string | null>(null)
-const msLoading = ref(false)
 const msError = ref<string | null>(null)
 
-async function fetchMsConnection() {
-  msLoading.value = true
-  msError.value = null
-  try {
+const { state: msStatus, isLoading: msLoading, execute: fetchMsConnection } = useAsyncState(
+  async () => {
     const status = await $orpc.auth.getMsConnectionStatus()
-    msConnected.value = status.connected
-    msExpiresAt.value = status.expiresAt
-  } catch (err: unknown) {
-    msError.value = getErrorMessage(err, 'Failed to check Microsoft connection')
-  } finally {
-    msLoading.value = false
-  }
-}
+    return status
+  },
+  { connected: false, expiresAt: null as string | null },
+)
+
+const msConnected = computed(() => msStatus.value.connected)
+const msExpiresAt = computed(() => msStatus.value.expiresAt)
 
 async function connectMicrosoft() {
   msError.value = null
@@ -34,17 +30,12 @@ async function connectMicrosoft() {
 async function disconnectMicrosoft() {
   try {
     await $orpc.auth.disconnectMs()
-    msConnected.value = false
-    msExpiresAt.value = null
+    msStatus.value = { connected: false, expiresAt: null }
     navigateTo('/settings?disconnected=true')
   } catch (err: unknown) {
     msError.value = getErrorMessage(err, 'Failed to disconnect Microsoft account')
   }
 }
-
-onMounted(() => {
-  fetchMsConnection()
-})
 </script>
 
 <template>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Chat } from '~/types/chat'
-import { getLastMessagePreview, getLastMessageReadDateTime, getLastUpdatedDateTime } from '~/utils/graph-helpers'
+import { useAsyncState } from '@vueuse/core'
+import { getLastMessagePreview, getLastMessageReadDateTime } from '~/utils/graph-helpers'
 
 const { $orpcClient: $orpc } = useNuxtApp()
 
@@ -12,37 +13,12 @@ const props = defineProps<{
   selectedChatId?: string | null
 }>()
 
-const chats = ref<Chat[]>([])
-const chatsLoading = ref(false)
-const chatsError = ref<string | null>(null)
-
-const sortedChats = computed(() =>
-  [...chats.value].sort((a, b) => {
-    const aTime = getLastMessagePreview(a)?.createdDateTime ?? a.lastUpdatedDateTime ?? ''
-    const bTime = getLastMessagePreview(b)?.createdDateTime ?? b.lastUpdatedDateTime ?? ''
-    return new Date(bTime).getTime() - new Date(aTime).getTime()
-  }),
+const { state: chats, isLoading: chatsLoading, error: chatsError, execute: fetchChats } = useAsyncState(
+  () => $orpc.chats.list().then(r => r.chats),
+  [] as Chat[],
 )
 
-onMounted(() => {
-  fetchChats()
-})
-
-async function fetchChats() {
-  chatsLoading.value = true
-  chatsError.value = null
-  try {
-    const result = await $orpc.chats.list()
-    chats.value = result.chats
-  } catch (err: unknown) {
-    chatsError.value = getErrorMessage(err, 'Failed to load chats')
-    chats.value = []
-  } finally {
-    chatsLoading.value = false
-  }
-}
-
-function isUnread(chat: Chat): boolean {
+function checkUnread(chat: Chat): boolean {
   const preview = getLastMessagePreview(chat)
   const readDateTime = getLastMessageReadDateTime(chat)
   if (!preview || !readDateTime) return false
@@ -51,6 +27,16 @@ function isUnread(chat: Chat): boolean {
     new Date(readDateTime).getTime()
   )
 }
+
+const sortedChats = computed(() =>
+  [...chats.value]
+    .sort((a, b) => {
+      const aTime = getLastMessagePreview(a)?.createdDateTime ?? a.lastUpdatedDateTime ?? ''
+      const bTime = getLastMessagePreview(b)?.createdDateTime ?? b.lastUpdatedDateTime ?? ''
+      return new Date(bTime).getTime() - new Date(aTime).getTime()
+    })
+    .map(chat => ({ chat, isUnread: checkUnread(chat) })),
+)
 
 function handleSelect(chat: Chat) {
   emit('select-chat', chat)
@@ -61,7 +47,7 @@ defineExpose({ chats, fetchChats })
 
 <template>
   <div
-    class="h-full flex-col"
+    class="flex h-full flex-col"
   >
     <div class="flex-shrink-0 border-b border-default px-4 py-3">
       <h1 class="text-base font-semibold tracking-tight text-highlighted">
@@ -79,18 +65,18 @@ defineExpose({ chats, fetchChats })
       <AppLoadingSpinner />
     </div>
 
-    <AppErrorAlert v-else-if="chatsError" :message="chatsError" @retry="fetchChats" />
+    <AppErrorAlert v-else-if="chatsError" :message="String(chatsError)" @retry="fetchChats" />
 
     <AppEmptyState v-else-if="sortedChats.length === 0" icon="i-lucide-message-square" message="No conversations yet" />
 
-    <div v-else class="flex-1 overflow-y-auto" role="list" aria-label="Chat list">
+    <div v-else class="flex-1 overflow-y-auto" role="listbox" aria-label="Chat list">
       <AppChatListItem
-        v-for="chat in sortedChats"
-        :key="chat.id"
-        :chat="chat"
-        :selected="chat.id === props.selectedChatId"
-        :is-unread="isUnread(chat)"
-        @select="handleSelect(chat)"
+        v-for="item in sortedChats"
+        :key="item.chat.id"
+        :chat="item.chat"
+        :selected="item.chat.id === props.selectedChatId"
+        :is-unread="item.isUnread"
+        @select="handleSelect(item.chat)"
       />
     </div>
   </div>

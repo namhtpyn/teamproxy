@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatMessageInfo, ConversationMember } from '@microsoft/microsoft-graph-types'
+import type { ChatMessage, ChatMessageInfo, ChatMessageReaction, ConversationMember } from '@microsoft/microsoft-graph-types'
 import type { MessageContentType, MessageType } from '#shared/utils/enums'
 import type { Chat, ChatMember, LastMessagePreview } from '~/types/chat'
 
@@ -113,7 +113,7 @@ export interface GroupedReaction {
 }
 
 export function groupReactions(
-  reactions: Array<{ reactionType?: string | null; user?: { user?: { id?: string | null } } }> | undefined,
+  reactions: ChatMessageReaction[] | undefined,
   msUserId?: string | null,
 ): GroupedReaction[] {
   if (!reactions?.length) return []

@@ -2,13 +2,14 @@
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { ContextMenuItem } from '@nuxt/ui'
 import type { OptimisticChatMessage } from '~/types/chat'
+import DOMPurify from 'dompurify'
 import { getEventDetail, getMessageContent, getSender, groupReactions } from '~/utils/graph-helpers'
-import { onClickOutside } from '@vueuse/core'
+import { onClickOutside, useClipboard } from '@vueuse/core'
 
-const props = withDefaults(defineProps<{
+const props = defineProps<{
   msg: ChatMessage | OptimisticChatMessage
   msUserId?: string | null
-}>(), {})
+}>()
 
 const emit = defineEmits<{
   retry: []
@@ -44,7 +45,7 @@ const replyReference = computed(() => {
 
 const renderedContent = computed(() => {
   if (!content.value) return ''
-  return content.value
+  const raw = content.value
     // Proxy <img> src from Graph API to our local proxy endpoint
     .replace(/(<img[^>]*\bsrc=["'])(https:\/\/graph\.microsoft\.com\/v1\.0\/)([^"']*)(["'][^>]*>)/gi,
       (_, prefix, _baseUrl, apiPath, suffix) => `${prefix}/api/graph-image?path=${encodeURIComponent(apiPath)}${suffix}`)
@@ -62,6 +63,10 @@ const renderedContent = computed(() => {
     // Remove trailing <br>
     .replace(/<br>\s*$/i, '')
     .trim()
+  if (import.meta.client) {
+    return DOMPurify.sanitize(raw, { ADD_ATTR: ['target', 'loading'] })
+  }
+  return raw
 })
 
 const hasRenderedContent = computed(() => renderedContent.value.length > 0)
@@ -82,7 +87,7 @@ function handleContentClick(e: MouseEvent) {
 
 const sendFailed = computed(() => ('sendFailed' in props.msg ? props.msg.sendFailed : undefined))
 
-const reactionGroups = computed(() => groupReactions(props.msg.reactions, props.msUserId))
+const reactionGroups = computed(() => groupReactions(props.msg.reactions ?? undefined, props.msUserId))
 const showReactionPicker = ref(false)
 const canReact = computed(() => !isSystemEvent.value && !isSending.value && !props.msg.id?.startsWith('temp:'))
 
@@ -109,12 +114,22 @@ const contextItems = computed<ContextMenuItem[][]>(() => {
   return items
 })
 
+const { copy, copied } = useClipboard()
+const toast = useToast()
+
+watch(copied, (isCopied) => {
+  if (isCopied) {
+    toast.add({ title: 'Copied!', color: 'success' })
+  }
+})
+
 function copyMessage() {
-  const text = renderedContent.value
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .trim()
-  navigator.clipboard.writeText(text)
+  const brConverted = renderedContent.value.replace(/<br\s*\/?>/gi, '\n')
+  const doc = new DOMParser().parseFromString(brConverted, 'text/html')
+  const text = (doc.body.textContent ?? '').trim()
+  copy(text).catch(() => {
+    toast.add({ title: 'Failed to copy message', color: 'error' })
+  })
 }
 
 function toggleReaction(reactionType: string) {
@@ -128,8 +143,6 @@ onClickOutside(pickerRef, () => {
 })
 
 const messageTime = computed(() => formatMessageTime(props.msg.createdDateTime ?? ''))
-
-
 </script>
 
 <template>
@@ -148,71 +161,22 @@ const messageTime = computed(() => formatMessageTime(props.msg.createdDateTime ?
     </div>
   </div>
 
-  <!-- Own message -->
-  <UContextMenu v-else-if="isOwn" :items="contextItems" :disabled="isSystemEvent || isSending">
-    <div class="flex justify-end">
-      <div class="max-w-[70%]">
-        <span class="mb-0.5 block text-right text-[10px] text-dimmed">
-          {{ messageTime }}
-        </span>
-        <div class="rounded-2xl px-3.5 py-2" :class="sendFailed ? 'bg-red-500/15 ring-1 ring-red-500/30' : 'bg-accented'">
-          <div v-if="replyReference" class="mb-1.5 border-l-2 border-primary/40 pl-2">
-            <p class="text-[11px] font-medium text-primary/80">{{ replyReference.senderName }}</p>
-            <p class="truncate text-[11px] text-dimmed">{{ replyReference.previewText }}</p>
-          </div>
-          <div v-if="hasRenderedContent" data-message-content class="break-words text-sm leading-relaxed text-highlighted" v-html="renderedContent" @click="handleContentClick" />
-        </div>
-        <div v-if="reactionGroups.length || canReact" ref="pickerRef" class="relative -mt-1.5 mb-1 flex items-center gap-0.5 justify-end">
-          <button
-            v-for="group in reactionGroups"
-            :key="group.reactionType"
-            type="button"
-            class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-colors"
-            :class="group.hasOwn
-              ? 'bg-primary/15 text-primary'
-              : 'bg-elevated text-dimmed hover:bg-elevated/80'"
-            @click="toggleReaction(group.reactionType)"
-          >
-            <span class="text-[13px] leading-none">{{ group.emoji }}</span>
-            <span>{{ group.count }}</span>
-          </button>
-          <button
-            v-if="canReact"
-            type="button"
-            class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-elevated text-dimmed transition-colors hover:bg-elevated/80 hover:text-highlighted"
-            @click="showReactionPicker = !showReactionPicker"
-          >
-            <UIcon name="i-lucide-smile-plus" class="h-3.5 w-3.5" />
-          </button>
-          <AppReactionPicker
-            :visible="showReactionPicker"
-            @select="toggleReaction"
-          />
-        </div>
-        <div v-if="isSending" class="mt-1 flex items-center justify-end gap-1">
-          <UIcon name="i-lucide-loader-circle" class="h-3 w-3 animate-spin text-muted" />
-          <span class="text-[10px] text-muted">Sending</span>
-        </div>
-        <div v-else-if="sendFailed" class="mt-1 flex items-center justify-end gap-2">
-          <p class="text-xs text-error">{{ sendFailed }}</p>
-          <button class="text-xs font-medium text-error underline" @click="emit('retry')">Retry</button>
-        </div>
-      </div>
-    </div>
-  </UContextMenu>
-
-  <!-- Other's message -->
   <UContextMenu v-else :items="contextItems" :disabled="isSystemEvent || isSending">
-    <div class="flex justify-start">
-      <div class="flex max-w-[70%] items-start gap-2">
+    <div :class="isOwn ? 'flex justify-end' : 'flex justify-start'">
+      <div :class="isOwn ? 'max-w-[70%]' : 'flex max-w-[70%] items-start gap-2'">
         <UAvatar
+          v-if="!isOwn"
           size="2xs"
           class="mt-1 flex-shrink-0"
         >
           {{ sender?.displayName?.charAt(0)?.toUpperCase() ?? '?' }}
         </UAvatar>
-        <div class="flex flex-col items-start gap-0.5">
-          <div class="flex items-baseline gap-2 px-3">
+
+        <div :class="isOwn ? '' : 'flex flex-col items-start gap-0.5'">
+          <span v-if="isOwn" class="mb-0.5 block text-right text-[10px] text-dimmed">
+            {{ messageTime }}
+          </span>
+          <div v-else class="flex items-baseline gap-2 px-3">
             <span class="text-xs font-medium text-highlighted">
               {{ sender?.displayName ?? 'Unknown' }}
             </span>
@@ -220,14 +184,16 @@ const messageTime = computed(() => formatMessageTime(props.msg.createdDateTime ?
               {{ messageTime }}
             </span>
           </div>
-          <div class="rounded-2xl px-3.5 py-2" :class="sendFailed ? 'bg-red-500/15 ring-1 ring-red-500/30' : 'bg-elevated'">
+
+          <div class="rounded-2xl px-3.5 py-2" :class="sendFailed ? 'bg-red-500/15 ring-1 ring-red-500/30' : isOwn ? 'bg-accented' : 'bg-elevated'">
             <div v-if="replyReference" class="mb-1.5 border-l-2 border-primary/40 pl-2">
               <p class="text-[11px] font-medium text-primary/80">{{ replyReference.senderName }}</p>
               <p class="truncate text-[11px] text-dimmed">{{ replyReference.previewText }}</p>
             </div>
             <div v-if="hasRenderedContent" data-message-content class="break-words text-sm leading-relaxed text-highlighted" v-html="renderedContent" @click="handleContentClick" />
           </div>
-          <div v-if="reactionGroups.length || canReact" ref="pickerRef" class="relative -mt-1.5 mb-1 flex items-center gap-0.5">
+
+          <div v-if="reactionGroups.length || canReact" ref="pickerRef" class="relative -mt-1.5 mb-1 flex items-center gap-0.5" :class="isOwn ? 'justify-end' : ''">
             <button
               v-for="group in reactionGroups"
               :key="group.reactionType"
@@ -254,9 +220,18 @@ const messageTime = computed(() => formatMessageTime(props.msg.createdDateTime ?
               @select="toggleReaction"
             />
           </div>
-          <p v-if="sendFailed" class="mt-1 text-xs text-red-400">
-            {{ sendFailed }}
-          </p>
+
+          <div v-if="isSending" class="mt-1 flex items-center justify-end gap-1">
+            <UIcon name="i-lucide-loader-circle" class="h-3 w-3 animate-spin text-muted" />
+            <span class="text-[10px] text-muted">Sending</span>
+          </div>
+          <template v-else-if="sendFailed">
+            <div v-if="isOwn" class="mt-1 flex items-center justify-end gap-2">
+              <p class="text-xs text-error">{{ sendFailed }}</p>
+              <button class="text-xs font-medium text-error underline" @click="emit('retry')">Retry</button>
+            </div>
+            <p v-else class="mt-1 text-xs text-red-400">{{ sendFailed }}</p>
+          </template>
         </div>
       </div>
     </div>

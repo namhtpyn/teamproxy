@@ -1,8 +1,6 @@
 <template>
   <div class="flex items-center gap-2 text-sm text-muted">
-    <div
-      class="h-4 w-4 animate-spin rounded-full border-2 border-default border-t-primary"
-    />
+    <UIcon name="i-lucide-loader-circle" class="h-5 w-5 animate-spin text-muted" />
     <slot> Loading... </slot>
   </div>
 </template>

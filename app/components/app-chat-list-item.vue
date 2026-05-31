@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import type { Chat } from '~/types/chat'
 import { useTimeAgo } from '@vueuse/core'
-import { getLastMessagePreview, getChatType } from '~/utils/graph-helpers'
-import { stripHtml } from '~/utils/chat-helpers'
 
 const props = defineProps<{
   chat: Chat
@@ -35,7 +33,7 @@ const previewText = computed(() => {
 
 <template>
   <button
-    role="listitem"
+    role="option"
     :aria-selected="selected"
     class="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-elevated"
     :class="

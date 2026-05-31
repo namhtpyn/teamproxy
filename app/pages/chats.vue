@@ -2,8 +2,8 @@
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { Chat } from '~/types/chat'
 import type { MessageType } from '#shared/utils/enums'
+import { whenever } from '@vueuse/core'
 import { getSender, getLastMessagePreview, setLastMessagePreview, setLastMessageReadDateTime } from '~/utils/graph-helpers'
-import { getSystemEventText } from '~/utils/system-event-text'
 
 useSeoMeta({ title: 'Chats — TeamProxy' })
 
@@ -41,7 +41,7 @@ function updateSidebarChat(chatId: string, msg: Record<string, unknown> | null) 
 
   let previewContent = body?.content ?? ''
   if (chatMsg.eventDetail) {
-    previewContent = getSystemEventText(chatMsg.eventDetail as Record<string, unknown>) ?? 'System event'
+    previewContent = getSystemEventInfo(chatMsg.eventDetail as Record<string, unknown>)?.text ?? 'System event'
   }
 
   setLastMessagePreview(chat, {
@@ -93,26 +93,22 @@ function markSelectedChatAsRead() {
 }
 
 // --- Watchers for live events ---
-watch(liveMessageEvent, (event) => {
-  if (!event) return
+whenever(liveMessageEvent, (event) => {
   updateSidebarChat(event.chatId, event.data)
   if (event.chatId === selectedChatId.value) {
     conversationPanel.value?.appendIncomingMessage(event.data)
   }
 })
 
-watch(liveVisibilityEvent, (event) => {
-  if (!event) return
+whenever(liveVisibilityEvent, (event) => {
   handleVisibilityChange(event.chatId, event.data.allowed)
 })
 
-watch(liveRespondEvent, (event) => {
-  if (!event) return
+whenever(liveRespondEvent, (event) => {
   handleRespondChange(event.chatId, event.data.canRespond)
 })
 
-watch(liveDisconnectEvent, (event) => {
-  if (!event) return
+whenever(liveDisconnectEvent, (event) => {
   toast.add({
     title: 'Teams connection is offline. Chats show last-known messages.',
     color: 'warning',

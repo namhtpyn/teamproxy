@@ -7,7 +7,16 @@ definePageMeta({
 })
 
 const route = useRoute()
+const router = useRouter()
 const { user, isAuthenticated, loading } = useAuth()
+
+onMounted(() => {
+  if (route.query.connected || route.query.disconnected) {
+    nextTick(() => {
+      router.replace({ query: {} })
+    })
+  }
+})
 </script>
 
 <template>

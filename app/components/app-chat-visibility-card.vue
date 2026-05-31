@@ -2,18 +2,40 @@
 import type { TableColumn } from '@nuxt/ui'
 import type { ChatType } from '#shared/utils/enums'
 import type { VisibilityChat, VisibilityChatRow } from '~/types/chat'
+import { useAsyncState } from '@vueuse/core'
 import { getChatMembers, getChatTopic, getChatType } from '~/utils/graph-helpers'
 
 const { $orpcClient: $orpc } = useNuxtApp()
 const toast = useToast()
 
-const chats = ref<VisibilityChat[]>([])
-const loading = ref(false)
 const loadingMore = ref(false)
-const error = ref<string | null>(null)
 const togglingId = ref<string | null>(null)
 const allowedTogglingId = ref<string | null>(null)
 const nextCursor = ref<string | undefined>(undefined)
+
+const { state: chats, isLoading: loading, error, execute: fetchVisibility } = useAsyncState(
+  async () => {
+    nextCursor.value = undefined
+    const result = await $orpc.chatVisibility.getVisibility({ limit: 20 })
+    nextCursor.value = result.nextCursor
+    return result.chats
+  },
+  [] as VisibilityChat[],
+)
+
+async function loadMore() {
+  if (!nextCursor.value) return
+  loadingMore.value = true
+  try {
+    const result = await $orpc.chatVisibility.getVisibility({ cursor: nextCursor.value, limit: 20 })
+    chats.value.push(...result.chats)
+    nextCursor.value = result.nextCursor
+  } catch (err: unknown) {
+    toast.add({ title: getErrorMessage(err, 'Failed to load more chats'), color: 'error' })
+  } finally {
+    loadingMore.value = false
+  }
+}
 
 const allowedCount = computed(() => chats.value.filter((c) => c.allowed).length)
 
@@ -31,99 +53,60 @@ const columns: TableColumn<VisibilityChatRow>[] = [
   { id: 'canRespond', header: 'Respond' },
 ]
 
-async function fetchVisibility(loadMore = false) {
-  if (loadMore) {
-    loadingMore.value = true
-  } else {
-    loading.value = true
-    nextCursor.value = undefined
-  }
-  error.value = null
-  try {
-    const params = loadMore && nextCursor.value
-      ? { cursor: nextCursor.value, limit: 20 }
-      : { limit: 20 }
-    const result = await $orpc.chatVisibility.getVisibility(params)
-    if (loadMore) {
-      chats.value.push(...result.chats)
-    } else {
-      chats.value = result.chats
-    }
-    nextCursor.value = result.nextCursor
-  } catch (err: unknown) {
-    error.value = getErrorMessage(err, 'Failed to load chat visibility')
-  } finally {
-    loading.value = false
-    loadingMore.value = false
-  }
-}
-
-async function optimisticToggle<T>(currentValue: T, newValue: T, updateFn: () => Promise<unknown>, revertFn: (val: T) => void) {
-  const previous = currentValue
-  revertFn(newValue)
-  try {
-    await updateFn()
-  } catch {
-    revertFn(previous)
-    toast.add({ title: 'Failed to update', color: 'error' })
-  }
-}
-
 async function toggleChat(chat: VisibilityChat) {
   const chatId = chat.id!
-  const original = chats.value.find(c => c.id === chatId)
-  if (!original) return
+  const idx = chats.value.findIndex(c => c.id === chatId)
+  if (idx === -1) return
+  const original = chats.value[idx]!
+  const snapshot = { allowed: original.allowed, canRespond: original.canRespond }
   const newValue = !original.allowed
   const previousCanRespond = original.canRespond
   if (!newValue) original.canRespond = false
+  original.allowed = newValue
   allowedTogglingId.value = chatId
 
-  await optimisticToggle(
-    original.allowed,
-    newValue,
-    async () => {
-      const result = await $orpc.chatVisibility.setVisibility({
-        chatId,
-        allowed: newValue,
-        canRespond: newValue ? previousCanRespond : false,
-        topic: chat.topic ?? '',
-        chatType: getChatType(chat) as ChatType,
+  try {
+    const result = await $orpc.chatVisibility.setVisibility({
+      chatId,
+      allowed: newValue,
+      canRespond: newValue ? previousCanRespond : false,
+      topic: chat.topic ?? '',
+      chatType: getChatType(chat) as ChatType,
+    })
+    original.subscriptionStatus = result.subscriptionStatus
+    if (result.subscriptionError) {
+      toast.add({
+        title: 'Subscription failed',
+        description: result.subscriptionError,
+        color: 'error',
+        icon: 'i-lucide-alert-circle',
       })
-      original.subscriptionStatus = result.subscriptionStatus
-      if (result.subscriptionError) {
-        toast.add({
-          title: 'Subscription failed',
-          description: result.subscriptionError,
-          color: 'error',
-          icon: 'i-lucide-alert-circle',
-        })
-      }
-    },
-    (val) => {
-      original.allowed = val
-      original.canRespond = val ? previousCanRespond : false
-    },
-  )
+    }
+  } catch {
+    original.allowed = snapshot.allowed
+    original.canRespond = snapshot.canRespond
+    toast.add({ title: 'Failed to update', color: 'error' })
+  }
 
   allowedTogglingId.value = null
 }
 
 async function toggleRespond(chat: VisibilityChat) {
   const chatId = chat.id!
-  const original = chats.value.find(c => c.id === chatId)
-  if (!original) return
+  const idx = chats.value.findIndex(c => c.id === chatId)
+  if (idx === -1) return
+  const original = chats.value[idx]!
+  const snapshot = original.canRespond
   const newValue = !original.canRespond
+  original.canRespond = newValue
   togglingId.value = chatId
 
-  await optimisticToggle(
-    original.canRespond,
-    newValue,
-    () => $orpc.chatVisibility.setCanRespond({
-      chatId,
-      canRespond: newValue,
-    }),
-    (val) => { original.canRespond = val },
-  )
+  try {
+    await $orpc.chatVisibility.setCanRespond({ chatId, canRespond: newValue })
+  } catch {
+    original.canRespond = snapshot
+    toast.add({ title: 'Failed to update', color: 'error' })
+  }
 
   togglingId.value = null
 }
@@ -141,10 +124,6 @@ function chatTypeLabel(chatType: string): string {
   if (chatType === 'meeting') return 'Meeting'
   return 'One-to-one'
 }
-
-onMounted(() => {
-  fetchVisibility()
-})
 </script>
 
 <template>
@@ -153,7 +132,7 @@ onMounted(() => {
       Chat Visibility
     </h2>
 
-    <UAlert v-if="error" :title="error" color="error" variant="soft" class="mb-3" />
+    <UAlert v-if="error" :title="String(error)" color="error" variant="soft" class="mb-3" />
 
     <UCard>
       <div class="mb-4 flex items-center justify-between">
@@ -240,7 +219,7 @@ onMounted(() => {
           size="sm"
           :loading="loadingMore"
           :disabled="loading"
-          @click="fetchVisibility(true)"
+          @click="loadMore()"
         >
           Load more
         </UButton>

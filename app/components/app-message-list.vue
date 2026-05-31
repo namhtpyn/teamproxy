@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { OptimisticChatMessage } from '~/types/chat'
+import { useScroll } from '@vueuse/core'
 
 const props = defineProps<{
   messages: (ChatMessage | OptimisticChatMessage)[]
@@ -18,22 +19,27 @@ const emit = defineEmits<{
 }>()
 
 const messagesContainer = ref<HTMLElement | null>(null)
-const isNearBottom = ref(true)
+const { arrivedState } = useScroll(messagesContainer, { offset: { bottom: 100, top: 50 } })
+const isNearBottom = computed(() => arrivedState.bottom)
 const newMessageCount = ref(0)
-const NEAR_BOTTOM_THRESHOLD = 100
 
-function updateNearBottom() {
-  const el = messagesContainer.value
-  if (!el) return
-  isNearBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_THRESHOLD
-}
+watch(isNearBottom, (near) => {
+  if (near) {
+    newMessageCount.value = 0
+  }
+})
+
+watch(() => arrivedState.top, (atTop) => {
+  if (atTop && !props.loadingMore) {
+    emit('load-more')
+  }
+})
 
 function scrollToBottom(force = false) {
   const el = messagesContainer.value
   if (!el) return
   if (!force && !isNearBottom.value) return
   el.scrollTop = el.scrollHeight
-  isNearBottom.value = true
   newMessageCount.value = 0
 }
 
@@ -59,18 +65,6 @@ watch(() => props.messages, (newMsgs, oldMsgs) => {
   }
 })
 
-function onScroll() {
-  const el = messagesContainer.value
-  if (!el || props.loadingMore) return
-  updateNearBottom()
-  if (isNearBottom.value) {
-    newMessageCount.value = 0
-  }
-  if (el.scrollTop < 50) {
-    emit('load-more')
-  }
-}
-
 function scrollToNewMessages() {
   scrollToBottom(true)
 }
@@ -80,7 +74,7 @@ defineExpose({ scrollToBottom, isNearBottom })
 
 <template>
   <div class="relative flex-1">
-    <div ref="messagesContainer" class="absolute inset-0 overflow-y-auto px-6 py-4" role="log" aria-label="Messages" @scroll="onScroll">
+    <div ref="messagesContainer" class="absolute inset-0 overflow-y-auto px-6 py-4" role="log" aria-label="Messages">
       <div v-if="loadingMore" class="flex justify-center py-2">
         <UIcon name="i-lucide-loader-circle" class="h-4 w-4 animate-spin text-muted" />
       </div>
@@ -107,14 +101,15 @@ defineExpose({ scrollToBottom, isNearBottom })
       leave-from-class="translate-y-0 opacity-100"
       leave-to-class="translate-y-2 opacity-0"
     >
-      <button
-        v-if="newMessageCount > 0 && !isNearBottom"
-        class="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-white shadow-lg hover:bg-primary/90"
-        @click="scrollToNewMessages"
-      >
-        <UIcon name="i-lucide-arrow-down" class="size-3.5" />
-        {{ newMessageCount }} new message{{ newMessageCount !== 1 ? 's' : '' }}
-      </button>
+      <div v-if="newMessageCount > 0 && !isNearBottom" aria-live="polite" class="absolute bottom-4 left-1/2 z-10 -translate-x-1/2">
+        <button
+          class="flex items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-white shadow-lg hover:bg-primary/90"
+          @click="scrollToNewMessages"
+        >
+          <UIcon name="i-lucide-arrow-down" class="size-3.5" />
+          {{ newMessageCount }} new message{{ newMessageCount !== 1 ? 's' : '' }}
+        </button>
+      </div>
     </Transition>
   </div>
 </template>
