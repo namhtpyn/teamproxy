@@ -2,6 +2,7 @@ import type { GraphRequestOptions, ODataError } from './types'
 
 export const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
 const MAX_RETRIES = 3
+const INITIAL_BACKOFF_MS = 1000
 const REQUEST_TIMEOUT_MS = 30_000
 
 export class GraphAPIError extends Error {
@@ -22,63 +23,52 @@ export class GraphAuthError extends Error {
   }
 }
 
-async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms))
-}
+async function withRetry(fn: () => Promise<Response>): Promise<Response> {
+  let retryCount = 0
+  let backoffMs = INITIAL_BACKOFF_MS
 
-/** Returns 'RETRY_429' sentinel when caller should retry, throws on error, returns Response on success. */
-async function handleGraphResponse(response: Response): Promise<Response | 'RETRY_429'> {
-  if (response.status === 429) {
-    return 'RETRY_429'
+  while (true) {
+    const response = await fn()
+
+    if (response.status === 429) {
+      if (++retryCount > MAX_RETRIES) {
+        throw new GraphAPIError(429, 'rate_limited', 'Too many requests. Please retry after some time.')
+      }
+      const retryAfter = response.headers.get('Retry-After')
+      const waitMs = retryAfter ? Number.parseInt(retryAfter, 10) * 1000 || backoffMs : backoffMs
+      await new Promise(resolve => setTimeout(resolve, waitMs))
+      backoffMs *= 2
+      continue
+    }
+
+    if (response.status === 401) {
+      throw new GraphAuthError('Access token is invalid or expired. Please re-authenticate.')
+    }
+
+    if (!response.ok) {
+      let errorBody: ODataError | null = null
+      try {
+        errorBody = (await response.json()) as ODataError
+      } catch { /* non-JSON error body */ }
+      throw new GraphAPIError(
+        response.status,
+        errorBody?.error?.code ?? 'unknown_error',
+        errorBody?.error?.message ?? response.statusText,
+      )
+    }
+
+    return response
   }
-
-  if (response.status === 401) {
-    throw new GraphAuthError('Authentication failed: token expired or invalid')
-  }
-
-  if (!response.ok) {
-    let errorBody: ODataError | null = null
-    try {
-      errorBody = (await response.json()) as ODataError
-    } catch { /* non-JSON error body */ }
-    const message = errorBody?.error?.message ?? `Graph API error: ${response.status}`
-    const code = errorBody?.error?.code ?? 'unknown'
-    throw new GraphAPIError(response.status, code, message)
-  }
-
-  return response
-}
-
-async function retryOrThrow(
-  result: Response | 'RETRY_429',
-  response: Response,
-  retryCount: number,
-  backoffMs: number,
-): Promise<{ shouldRetry: false } | { shouldRetry: true; retryCount: number; backoffMs: number }> {
-  if (result !== 'RETRY_429') return { shouldRetry: false }
-
-  const nextRetry = retryCount + 1
-  if (nextRetry > MAX_RETRIES) {
-    throw new GraphAPIError(429, 'rate_limited', 'Rate limit exceeded after max retries')
-  }
-  const retryAfter = response.headers.get('Retry-After')
-  const retrySeconds = retryAfter ? parseInt(retryAfter, 10) : NaN
-  const waitMs = !isNaN(retrySeconds) && retrySeconds > 0 ? retrySeconds * 1000 : backoffMs
-  await sleep(waitMs)
-  return { shouldRetry: true, retryCount: nextRetry, backoffMs: backoffMs * 2 }
 }
 
 export async function graphRequest<T>(options: GraphRequestOptions): Promise<T | undefined> {
   const { method, path, rawUrl, body, query, accessToken } = options
 
-  let url = rawUrl ?? `${GRAPH_BASE}${path}`
-  if (!rawUrl && query && Object.keys(query).length > 0) {
-    const params = new URLSearchParams(query)
-    url += `?${params.toString()}`
-  }
+  const queryParams = (!rawUrl && query && Object.keys(query).length > 0) ? new URLSearchParams(query) : null
+  const url = rawUrl ?? `${GRAPH_BASE}${path}${queryParams ? `?${queryParams}` : ''}`
 
-  const successResponse = await withRetry(async () => {
-    const response = await fetch(url, {
+  const response = await withRetry(async () =>
+    fetch(url, {
       method,
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -86,32 +76,13 @@ export async function graphRequest<T>(options: GraphRequestOptions): Promise<T |
       },
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    })
-    return { response, result: await handleGraphResponse(response) }
-  })
+    }),
+  )
 
-  const contentType = successResponse.headers.get('content-type')
+  const contentType = response.headers.get('content-type')
   if (contentType?.includes('application/json')) {
-    return successResponse.json()
+    return response.json()
   }
 
   return undefined
-}
-
-async function withRetry(
-  fn: () => Promise<{ response: Response; result: Response | 'RETRY_429' }>,
-): Promise<Response> {
-  let retryCount = 0
-  let backoffMs = 1000
-
-  while (true) {
-    const { response, result } = await fn()
-    const retry = await retryOrThrow(result, response, retryCount, backoffMs)
-    if (retry.shouldRetry) {
-      retryCount = retry.retryCount
-      backoffMs = retry.backoffMs
-      continue
-    }
-    return result as Response
-  }
 }

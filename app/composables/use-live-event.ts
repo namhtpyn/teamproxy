@@ -1,4 +1,4 @@
-import { computed, type Ref } from 'vue'
+import type { Ref } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 
 type LiveEndpoint = 'liveMessages' | 'liveVisibility' | 'liveRespond' | 'liveDisconnect'

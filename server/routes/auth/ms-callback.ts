@@ -1,5 +1,5 @@
 import { defineEventHandler, getQuery, createError } from 'h3'
-import { eq, lt } from 'drizzle-orm'
+import { lt } from 'drizzle-orm'
 import { db } from '../../db/client'
 import { oauthTokens } from '../../db/schema'
 import { exchangeToken } from '../../ms-graph/token-exchange'

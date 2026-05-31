@@ -4,17 +4,17 @@ interface EventDetail {
   [key: string]: unknown
 }
 
-function getInitiator(detail: EventDetail): string {
+function getInitiator(detail: EventDetail) {
   return detail.initiator?.user?.displayName ?? 'Someone'
 }
 
-function getMembers(detail: EventDetail): string {
+function getMembers(detail: EventDetail) {
   const members = detail.members as Array<{ displayName?: string | null }> | undefined
   if (!members?.length) return 'members'
   return members.map(m => m.displayName ?? 'Unknown').join(', ')
 }
 
-function formatIsoDuration(iso: string): string {
+function formatIsoDuration(iso: string) {
   // PT13M51S → 13m 51s, PT1H11M16S → 1h 11m 16s, PT57M47.3683704S → 57m 47s
   const m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/)
   if (!m) return iso

@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import type { ChatMessage } from '@microsoft/microsoft-graph-types'
-import type { Chat, OptimisticChatMessage } from '~/types/chat'
+import type { Chat } from '~/types/chat'
 
 const props = defineProps<{
   chat: Chat | null
@@ -10,344 +9,39 @@ const emit = defineEmits<{
   back: []
 }>()
 
-const { $orpcClient: $orpc } = useNuxtApp()
+const { msUserId, ensure: ensureMsUser } = useMsUser()
 const { user } = useAuth()
-const toast = useToast()
 
 const displayName = computed(() => getChatDisplayName(props.chat!, user.value?.id))
 const initial = computed(() => getChatInitial(props.chat!, user.value?.id))
 const chatType = computed(() => getChatType(props.chat!))
 const chatMembers = computed(() => getChatMembers(props.chat!))
 
-type MessageItem = ChatMessage | OptimisticChatMessage
-const messages = ref<MessageItem[]>([])
-const messagesLoading = ref(false)
-const messagesError = ref<string | null>(null)
-const nextCursor = ref<string | undefined>(undefined)
-const loadingMore = ref(false)
-const { msUserId, ensure: ensureMsUser } = useMsUser()
-const pendingSends = new Set<string>()
-const pinnedMessageIds = ref<string[]>([])
-
-const replyingTo = ref<MessageItem | null>(null)
-const editingMessageId = ref<string | null>(null)
-const messageListRef = ref<{ scrollToBottom: (force?: boolean) => void; isNearBottom: boolean } | null>(null)
-
-const sortedMessages = computed(() =>
-  [...messages.value].sort(
-    (a, b) =>
-      new Date(a.createdDateTime ?? '').getTime() -
-      new Date(b.createdDateTime ?? '').getTime(),
-  ),
+const {
+  messages, messagesLoading, messagesError, loadingMore,
+  messageListRef, sortedMessages, isNearBottom, pendingSends,
+  loadMessages, loadMore, refreshMessages, appendIncomingMessage,
+} = useConversationMessages(
+  () => props.chat,
+  { msUserId: () => msUserId.value },
 )
 
-async function loadMessages() {
-  if (!props.chat) return
-  const chatId = props.chat.id!
-  ensureMsUser()
-  messages.value = []
-  messagesError.value = null
-  messagesLoading.value = true
-  nextCursor.value = undefined
-  loadingMore.value = false
+watch(() => props.chat?.id, () => { if (props.chat) ensureMsUser() })
 
-  try {
-    const result = await $orpc.chats.getMessages({ chatId })
-    if (props.chat?.id !== chatId) return
-    messages.value = result.messages
-    nextCursor.value = result.nextCursor
-  } catch (err: unknown) {
-    messagesError.value = getErrorMessage(err, 'Failed to load messages')
-    messages.value = []
-  } finally {
-    messagesLoading.value = false
-    nextTick(() => messageListRef.value?.scrollToBottom(true))
-  }
-}
-
-async function loadMore() {
-  if (!props.chat || loadingMore.value || !nextCursor.value) return
-  loadingMore.value = true
-
-  try {
-    const result = await $orpc.chats.getMessages({ chatId: props.chat.id!, nextLink: nextCursor.value })
-    messages.value = [...result.messages, ...messages.value]
-    nextCursor.value = result.nextCursor
-  } catch (err: unknown) {
-    toast.add({ title: 'Failed to load more messages', description: err instanceof Error ? err.message : undefined, color: 'error' })
-  } finally {
-    loadingMore.value = false
-  }
-}
-
-watch(
-  () => props.chat?.id,
-  (newId, oldId) => {
-    replyingTo.value = null
-    pinnedMessageIds.value = []
-    if (newId && newId !== oldId) {
-      loadMessages()
-    }
-  },
+const {
+  replyingTo, editingMessageId, pinnedMessageIds,
+  handleSubmit, retryMessage, handleReaction,
+  onReply, clearReply, onEdit, onSaveEdit, onCancelEdit,
+  onDelete, onPin, onUnpin,
+} = useMessageActions(
+  () => props.chat,
+  messages,
+  pendingSends,
+  messageListRef,
+  () => msUserId.value ?? undefined,
 )
-
-async function refreshMessages() {
-  if (!props.chat) return
-  try {
-    const result = await $orpc.chats.getMessages({ chatId: props.chat.id! })
-    messages.value = result.messages
-  } catch (err: unknown) {
-    toast.add({ title: 'Failed to refresh messages', description: err instanceof Error ? err.message : undefined, color: 'error' })
-  }
-}
-
-
-function appendIncomingMessage(raw: Record<string, unknown>) {
-  const msg = raw as ChatMessage
-
-  const sender = getSender(msg)
-
-  if (sender?.id && msUserId.value && sender.id === msUserId.value && pendingSends.size > 0) {
-    const idx = messages.value.findIndex(m => m.id?.startsWith('temp:'))
-    if (idx !== -1) {
-      const tempId = messages.value[idx]!.id
-      pendingSends.delete(tempId ?? '')
-      const updated = [...messages.value]
-      updated[idx] = msg
-      messages.value = updated
-      return
-    }
-  }
-
-  if (messages.value.some(m => m.id === msg.id)) return
-
-  messages.value = [...messages.value, msg]
-}
-
-function handleSubmit(payload: { content: string; image: { contentBytes: string; contentType: string } | null; mentions: Array<{ userId: string; displayName: string }> | undefined; replyToId?: string; hostedContents?: Array<{ temporaryId: string; contentBytes: string; contentType: string }> }) {
-  if (!props.chat) return
-
-  const chatId = props.chat.id!
-  const tempId = `temp:${Date.now()}`
-  pendingSends.add(tempId)
-
-  const optimisticMsg: OptimisticChatMessage = {
-    id: tempId,
-    messageType: 'message',
-    body: { content: payload.content, contentType: 'text' },
-    createdDateTime: new Date().toISOString(),
-    from: msUserId.value && user.value
-      ? { user: { id: msUserId.value, displayName: user.value.displayName ?? 'You' } }
-      : { user: { id: 'unknown', displayName: 'You' } },
-  }
-
-  messages.value = [...messages.value, optimisticMsg]
-  replyingTo.value = null
-  nextTick(() => messageListRef.value?.scrollToBottom(true))
-
-  $orpc.chats.sendMessage({
-    chatId,
-    content: payload.content,
-    replyToId: payload.replyToId,
-    mentions: payload.mentions,
-    hostedContents: payload.hostedContents,
-  }).then(({ message: real }) => {
-    if (props.chat?.id !== chatId) return
-    if (!pendingSends.has(tempId)) return
-    pendingSends.delete(tempId)
-
-    const idx = messages.value.findIndex(m => m.id === tempId)
-    if (idx !== -1) {
-      const updated = [...messages.value]
-      updated[idx] = real as ChatMessage
-      messages.value = updated
-    }
-  }).catch((err: unknown) => {
-    if (props.chat?.id !== chatId) return
-    pendingSends.delete(tempId)
-    const failedIdx = messages.value.findIndex(m => m.id === tempId)
-    if (failedIdx !== -1) {
-      messages.value = messages.value.map(m => m.id === tempId ? { ...m, sendFailed: getErrorMessage(err, 'Failed to send') } as OptimisticChatMessage : m)
-    }
-    toast.add({ title: 'Failed to send message', description: getErrorMessage(err, 'Failed to send message'), color: 'error' })
-  })
-}
-
-const isNearBottom = computed(() => messageListRef.value?.isNearBottom ?? true)
-
-function retryMessage(tempId: string) {
-  if (!props.chat) return
-
-  const chatId = props.chat.id!
-  const idx = messages.value.findIndex(m => m.id === tempId)
-  if (idx === -1) return
-
-  const failedMsg = messages.value[idx] as OptimisticChatMessage
-  if (!failedMsg.sendFailed) return
-
-  const content = failedMsg.body?.content ?? ''
-  pendingSends.add(tempId)
-  messages.value = messages.value.map(m => m.id === tempId ? { ...m, sendFailed: undefined } as OptimisticChatMessage : m)
-
-  $orpc.chats.sendMessage({
-    chatId,
-    content,
-  }).then(({ message: real }) => {
-    if (props.chat?.id !== chatId) return
-    if (!pendingSends.has(tempId)) return
-    pendingSends.delete(tempId)
-
-    const replaceIdx = messages.value.findIndex(m => m.id === tempId)
-    if (replaceIdx !== -1) {
-      const updated = [...messages.value]
-      updated[replaceIdx] = real as ChatMessage
-      messages.value = updated
-    }
-  }).catch((err: unknown) => {
-    if (props.chat?.id !== chatId) return
-    pendingSends.delete(tempId)
-    messages.value = messages.value.map(m => m.id === tempId ? { ...m, sendFailed: getErrorMessage(err, 'Failed to send') } as OptimisticChatMessage : m)
-    toast.add({ title: 'Failed to send message', description: getErrorMessage(err, 'Failed to send message'), color: 'error' })
-  })
-}
 
 defineExpose({ messagesContainer: messageListRef, refreshMessages, appendIncomingMessage, isNearBottom })
-
-async function handleReaction({ messageId, reactionType }: { messageId: string; reactionType: string }) {
-  if (!props.chat) return
-  const chatId = props.chat.id!
-
-  const msg = messages.value.find(m => m.id === messageId)
-  if (!msg) return
-
-  const originalReactions = msg.reactions
-
-  // Graph allows only ONE reaction per user per message.
-  // If user already has this reaction → toggle off (unset).
-  // If user has a DIFFERENT reaction → Graph replaces it, so remove old optimistically first.
-  const sameReaction = msg.reactions?.find(
-    r => r.reactionType === reactionType && r.user?.user?.id === msUserId.value,
-  )
-  const prevReaction = msg.reactions?.find(
-    r => r.reactionType !== reactionType && r.user?.user?.id === msUserId.value,
-  )
-
-  let newReactions: typeof originalReactions
-
-  if (sameReaction) {
-    // Toggle off: remove this reaction
-    const filtered = msg.reactions?.filter(r => r !== sameReaction)
-    newReactions = filtered?.length ? filtered : undefined
-  } else {
-    // Adding new: remove previous reaction first (Graph replaces)
-    const filtered = (prevReaction
-      ? msg.reactions?.filter(r => r !== prevReaction)
-      : msg.reactions) ?? []
-    newReactions = [...filtered, {
-      reactionType,
-      user: { user: { id: msUserId.value! } },
-      createdDateTime: new Date().toISOString(),
-    }]
-  }
-
-  messages.value = messages.value.map(m => m.id === messageId ? { ...m, reactions: newReactions } : m)
-
-  try {
-    if (sameReaction) {
-      await $orpc.chats.unsetReaction({ chatId, messageId, reactionType })
-    } else {
-      await $orpc.chats.setReaction({ chatId, messageId, reactionType })
-    }
-  } catch (err: unknown) {
-    // Roll back optimistic mutation
-    messages.value = messages.value.map(m => m.id === messageId ? { ...m, reactions: originalReactions } : m)
-    console.error('[handleReaction] API call failed:', err, { chatId, messageId, reactionType })
-  }
-}
-
-function onReply(messageId: string) {
-  const msg = messages.value.find(m => m.id === messageId)
-  if (msg) replyingTo.value = msg
-}
-
-function clearReply() {
-  replyingTo.value = null
-}
-
-function onEdit(messageId: string) {
-  editingMessageId.value = messageId
-  replyingTo.value = null
-}
-
-function onSaveEdit(payload: { messageId: string; content: string }) {
-  if (!props.chat) return
-  const chatId = props.chat.id!
-  const { messageId, content } = payload
-
-  const msg = messages.value.find(m => m.id === messageId)
-  if (!msg?.body) return
-
-  const oldContent = msg.body.content
-  msg.body.content = content
-
-  editingMessageId.value = null
-
-  $orpc.chats.editMessage({ chatId, messageId, content }).catch((err: unknown) => {
-    const target = messages.value.find(m => m.id === messageId)
-    if (target?.body) target.body.content = oldContent
-    toast.add({ title: 'Failed to edit message', description: getErrorMessage(err, 'Failed to edit'), color: 'error' })
-  })
-}
-
-function onCancelEdit() {
-  editingMessageId.value = null
-}
-
-function onDelete(messageId: string) {
-  if (!props.chat) return
-  const chatId = props.chat.id!
-
-  const msg = messages.value.find(m => m.id === messageId)
-  if (!msg) return
-
-  const oldDeletedDateTime = (msg as Record<string, unknown>).deletedDateTime
-  const oldContent = msg.body?.content ?? ''
-  if (msg.body) msg.body.content = ''
-  ;(msg as Record<string, unknown>).deletedDateTime = new Date().toISOString()
-
-  $orpc.chats.deleteMessage({ chatId, messageId }).catch((err: unknown) => {
-    const target = messages.value.find(m => m.id === messageId)
-    if (target) {
-      if (target.body) target.body.content = oldContent
-      ;(target as Record<string, unknown>).deletedDateTime = oldDeletedDateTime
-    }
-    toast.add({ title: 'Failed to delete message', description: getErrorMessage(err, 'Failed to delete'), color: 'error' })
-  })
-}
-
-function onPin(messageId: string) {
-  if (!props.chat) return
-  const chatId = props.chat.id!
-
-  pinnedMessageIds.value = [...pinnedMessageIds.value, messageId]
-
-  $orpc.chats.pinMessage({ chatId, messageId }).catch((err: unknown) => {
-    pinnedMessageIds.value = pinnedMessageIds.value.filter(id => id !== messageId)
-    toast.add({ title: 'Failed to pin message', description: getErrorMessage(err, 'Failed to pin'), color: 'error' })
-  })
-}
-
-function onUnpin(messageId: string) {
-  if (!props.chat) return
-  const chatId = props.chat.id!
-
-  pinnedMessageIds.value = pinnedMessageIds.value.filter(id => id !== messageId)
-
-  $orpc.chats.unpinMessage({ chatId, messageId }).catch((err: unknown) => {
-    pinnedMessageIds.value = [...pinnedMessageIds.value, messageId]
-    toast.add({ title: 'Failed to unpin message', description: getErrorMessage(err, 'Failed to unpin'), color: 'error' })
-  })
-}
 </script>
 
 <template>
@@ -394,8 +88,7 @@ function onUnpin(messageId: string) {
          ref="messageListRef"
          :messages="sortedMessages"
          :loading-more="loadingMore"
-         :ms-user-id="msUserId"
-         :editing-message-id="editingMessageId"
+          :editing-message-id="editingMessageId"
           :pinned-message-ids="pinnedMessageIds"
           :members="chatMembers"
          @load-more="loadMore"
@@ -413,7 +106,6 @@ function onUnpin(messageId: string) {
       <AppMessageInput
         :chat-id="chat.id!"
         :members="chatMembers"
-        :ms-user-id="msUserId"
         :disabled="!chat.canRespond"
         :replying-to="replyingTo"
         @submit="handleSubmit"

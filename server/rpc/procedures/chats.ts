@@ -2,12 +2,28 @@ import { z } from 'zod'
 import { ORPCError, eventIterator, getEventMeta, withEventMeta } from '@orpc/server'
 import { consola } from 'consola'
 import { authed } from '../middleware/auth'
-import { createGraphClient, graphRequest, type ODataQueryParams } from '../../ms-graph/graph-client'
-import type { Chat as GraphChat, ChatMessage } from '../../ms-graph/types'
+import { createGraphClient, graphRequest } from '../../ms-graph/graph-client'
+import type { Chat as GraphChat, ChatMessage } from '@microsoft/microsoft-graph-types'
 import { getEventPublisher, messageEventSchema, visibilityEventSchema, respondEventSchema, disconnectEventSchema } from '../../utils/event-bus'
 import { getAllowedChats, getAllowedChat } from '../../utils/allowed-chats'
 import { prefetchMessageImages } from '../../utils/image-cache'
 import { getCachedMsUser, setCachedMsUser } from '../../utils/ms-user-cache'
+
+function requireReadAccess(chatId: string) {
+  const chatAccess = getAllowedChat(chatId)
+  if (!chatAccess?.allowed) {
+    throw new ORPCError('FORBIDDEN', { message: 'Not allowed to access this chat' })
+  }
+  return chatAccess
+}
+
+function requireWriteAccess(chatId: string) {
+  const chatAccess = getAllowedChat(chatId)
+  if (!chatAccess?.allowed || !chatAccess.canRespond) {
+    throw new ORPCError('FORBIDDEN', { message: 'Not allowed to modify this chat' })
+  }
+  return chatAccess
+}
 
 function createLiveHandler(schema: z.ZodTypeAny, type: string, label: string) {
   return authed.output(eventIterator(schema)).handler(async function* ({ signal, lastEventId }) {
@@ -79,10 +95,7 @@ export const chatsRouter = {
       }),
     )
     .handler(async ({ input, context: { accessToken } }) => {
-      const chatAccess = getAllowedChat(input.chatId)
-      if (!chatAccess || !chatAccess.allowed) {
-        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to access this chat' })
-      }
+      requireReadAccess(input.chatId)
 
       const client = createGraphClient({ accessToken })
       let messages: ChatMessage[]
@@ -98,7 +111,7 @@ export const chatsRouter = {
         messages = data?.value ?? []
         nextLink = data?.['@odata.nextLink']
       } else {
-        const query: ODataQueryParams = {
+        const query = {
           $top: input.top,
           $orderby: 'createdDateTime desc',
         }
@@ -142,10 +155,7 @@ export const chatsRouter = {
       }),
     )
     .handler(async ({ input, context: { accessToken } }) => {
-      const chatAccess = getAllowedChat(input.chatId)
-      if (!chatAccess || !chatAccess.allowed || !chatAccess.canRespond) {
-        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to send messages to this chat' })
-      }
+      requireWriteAccess(input.chatId)
 
       const client = createGraphClient({ accessToken })
 
@@ -162,35 +172,21 @@ export const chatsRouter = {
           }))
         : undefined
 
-      let content = input.content
-      let contentType = 'html'
-      const hasMentions = mentions && mentions.length > 0
+      const hasMentions = !!mentions?.length
       const hasHostedContents = !!input.hostedContents?.length
-
-      if (hasMentions) {
-        for (const mention of mentions) {
-          content = content.replace(
-            `@${mention.mentionText}`,
-            `<at id="${mention.id}">${mention.mentionText}</at>`,
+      const content = hasMentions
+        ? mentions.reduce(
+            (c, m) => c.replace(`@${m.mentionText}`, `<at id="${m.id}">${m.mentionText}</at>`),
+            input.content,
           )
-        }
-      }
+        : input.content
+      const contentType = 'html'
 
       const hostedContents = hasHostedContents ? input.hostedContents : undefined
 
-      let response: ChatMessage | undefined
-
-      if (input.replyToId && !hasHostedContents && !hasMentions) {
-        response = await client.chats.replyWithQuote(input.chatId, input.replyToId, { contentType, content })
-      } else {
-        response = await client.chats.send(
-          input.chatId,
-          { contentType, content },
-          undefined,
-          mentions,
-          hostedContents,
-        )
-      }
+      const response = input.replyToId && !hasHostedContents && !hasMentions
+        ? await client.chats.replyWithQuote(input.chatId, input.replyToId, { contentType, content })
+        : await client.chats.send(input.chatId, { contentType, content }, undefined, mentions, hostedContents)
 
       if (!response) throw new ORPCError('INTERNAL', { message: 'Failed to send message' })
       return { message: response }
@@ -204,10 +200,7 @@ export const chatsRouter = {
       }),
     )
     .handler(async ({ input, context: { accessToken } }) => {
-      const chatAccess = getAllowedChat(input.chatId)
-      if (!chatAccess || !chatAccess.allowed || !chatAccess.canRespond) {
-        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to delete messages in this chat' })
-      }
+      requireWriteAccess(input.chatId)
       const client = createGraphClient({ accessToken })
       let me = getCachedMsUser()
       if (!me) {
@@ -227,10 +220,7 @@ export const chatsRouter = {
       }),
     )
     .handler(async ({ input, context: { accessToken } }) => {
-      const chatAccess = getAllowedChat(input.chatId)
-      if (!chatAccess || !chatAccess.allowed || !chatAccess.canRespond) {
-        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to edit messages in this chat' })
-      }
+      requireWriteAccess(input.chatId)
       const client = createGraphClient({ accessToken })
       await client.chats.updateMessage(input.chatId, input.messageId, {
         contentType: 'html',
@@ -247,10 +237,7 @@ export const chatsRouter = {
       }),
     )
     .handler(async ({ input, context: { accessToken } }) => {
-      const chatAccess = getAllowedChat(input.chatId)
-      if (!chatAccess || !chatAccess.allowed) {
-        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to react in this chat' })
-      }
+      requireReadAccess(input.chatId)
       const client = createGraphClient({ accessToken })
       await client.chats.setReaction(input.chatId, input.messageId, input.reactionType)
     }),
@@ -264,10 +251,7 @@ export const chatsRouter = {
       }),
     )
     .handler(async ({ input, context: { accessToken } }) => {
-      const chatAccess = getAllowedChat(input.chatId)
-      if (!chatAccess || !chatAccess.allowed) {
-        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to react in this chat' })
-      }
+      requireReadAccess(input.chatId)
       const client = createGraphClient({ accessToken })
       await client.chats.unsetReaction(input.chatId, input.messageId, input.reactionType)
     }),
@@ -280,10 +264,7 @@ export const chatsRouter = {
       }),
     )
     .handler(async ({ input, context: { accessToken } }) => {
-      const chatAccess = getAllowedChat(input.chatId)
-      if (!chatAccess || !chatAccess.allowed || !chatAccess.canRespond) {
-        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to pin messages in this chat' })
-      }
+      requireWriteAccess(input.chatId)
       const client = createGraphClient({ accessToken })
       await client.chats.pinMessage(input.chatId, input.messageId)
     }),
@@ -296,10 +277,7 @@ export const chatsRouter = {
       }),
     )
     .handler(async ({ input, context: { accessToken } }) => {
-      const chatAccess = getAllowedChat(input.chatId)
-      if (!chatAccess || !chatAccess.allowed || !chatAccess.canRespond) {
-        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to unpin messages in this chat' })
-      }
+      requireWriteAccess(input.chatId)
       const client = createGraphClient({ accessToken })
       await client.chats.unpinMessage(input.chatId, input.messageId)
     }),
@@ -311,11 +289,9 @@ export const chatsRouter = {
   }) {
     const publisher = getEventPublisher()
 
-    let allowedChatIds: Set<string> | null = null
-    if (context.role !== 'admin') {
-      const allowed = getAllowedChats()
-      allowedChatIds = new Set(allowed.map((r) => r.chatId))
-    }
+    const allowedChatIds = context.role !== 'admin'
+      ? new Set(getAllowedChats().map((r) => r.chatId))
+      : null
 
     try {
       for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {

@@ -4,8 +4,8 @@ import { ORPCError } from '@orpc/server'
 import { CHAT_TYPES } from '#shared/utils/enums'
 import type { SubscriptionStatus } from '#shared/utils/enums'
 import { adminAuthed } from '../middleware/auth'
-import { createGraphClient, graphRequest, type ODataQueryParams } from '../../ms-graph/graph-client'
-import type { Chat } from '../../ms-graph/types'
+import { createGraphClient, graphRequest } from '../../ms-graph/graph-client'
+import type { Chat } from '@microsoft/microsoft-graph-types'
 import { clearMsSubscription } from '../../utils/ms-subscription-store'
 import { getMsSubscriptionStatus } from '../../utils/ms-subscription-status'
 import { getEventPublisher } from '../../utils/event-bus'
@@ -14,6 +14,14 @@ import { getAllowedChat, invalidateAllowedChatsCache } from '../../utils/allowed
 import { db } from '../../db/client'
 import { allowedChats } from '../../db/schema'
 import { eq } from 'drizzle-orm'
+
+async function createSubscriptionOrFail(chatId: string, accessToken: string) {
+  const result = await createMsSubscription(chatId, accessToken)
+  return {
+    subscriptionStatus: result.success ? 'active' as const : 'none' as const,
+    subscriptionError: result.success ? undefined : result.error,
+  }
+}
 
 export const chatVisibilityRouter = {
   getVisibility: adminAuthed
@@ -39,7 +47,7 @@ export const chatVisibilityRouter = {
         value = page?.value ?? []
         nextLink = page?.['@odata.nextLink']
       } else {
-        const query: ODataQueryParams = {
+        const query = {
           $select: 'id,topic,chatType,lastUpdatedDateTime,createdDateTime,members',
           $expand: 'members',
           $top: limit,
@@ -110,9 +118,9 @@ export const chatVisibilityRouter = {
           clearMsSubscription(input.chatId)
           subscriptionStatus = 'none'
         } else if (input.allowed && getMsSubscriptionStatus(existing) !== 'active') {
-          const result = await createMsSubscription(input.chatId, accessToken)
-          subscriptionStatus = result.success ? 'active' : 'none'
-          if (!result.success) subscriptionError = result.error
+          const sub = await createSubscriptionOrFail(input.chatId, accessToken)
+          subscriptionStatus = sub.subscriptionStatus
+          subscriptionError = sub.subscriptionError
         } else {
           subscriptionStatus = getMsSubscriptionStatus(existing)
         }
@@ -128,9 +136,9 @@ export const chatVisibilityRouter = {
           .run()
         invalidateAllowedChatsCache()
         if (input.allowed) {
-          const result = await createMsSubscription(input.chatId, accessToken)
-          subscriptionStatus = result.success ? 'active' : 'none'
-          if (!result.success) subscriptionError = result.error
+          const sub = await createSubscriptionOrFail(input.chatId, accessToken)
+          subscriptionStatus = sub.subscriptionStatus
+          subscriptionError = sub.subscriptionError
         }
       }
 

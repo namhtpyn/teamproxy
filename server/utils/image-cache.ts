@@ -3,17 +3,9 @@ import { existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { consola } from 'consola'
 import { GRAPH_BASE } from '../ms-graph/graph-client'
+import { CONTENT_TYPE_TO_EXT } from './image-content-types'
 
 const CACHE_DIR = process.env.IMAGE_CACHE_DIR || join(process.cwd(), '.data', 'images')
-
-const EXT_MAP: Record<string, string> = {
-  'image/png': '.png',
-  'image/jpeg': '.jpg',
-  'image/gif': '.gif',
-  'image/webp': '.webp',
-  'image/bmp': '.bmp',
-  'image/svg+xml': '.svg',
-}
 
 function hashPath(graphPath: string): string {
   return createHash('sha256').update(graphPath).digest('hex').slice(0, 16)
@@ -60,7 +52,7 @@ export async function cacheImage(graphPath: string, accessToken: string): Promis
     }
 
     const contentType = response.headers.get('content-type') ?? 'image/png'
-    const ext = EXT_MAP[contentType] ?? '.png'
+    const ext = CONTENT_TYPE_TO_EXT[contentType] ?? '.png'
     const filePath = join(CACHE_DIR, `${hash}${ext}`)
 
     ensureCacheDir()

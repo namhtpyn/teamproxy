@@ -11,6 +11,9 @@ import { createGraphClient } from '../../ms-graph/graph-client'
 import { disconnectAllSubscriptions } from '../../utils/disconnect-all-subscriptions'
 import { getEventPublisher } from '../../utils/event-bus'
 
+const DISCONNECTED = { connected: false as const, accountInfo: null, accessTokenExpiresAt: null, refreshTokenExpiresAt: null }
+const MS_REFRESH_TOKEN_LIFETIME_MS = (90 * 24 - 1) * 60 * 60 * 1000 // ~90 days minus 1 hour per MS docs
+
 export const authRouter = {
   getStatus: base.handler(async ({ context: { username, role } }) => {
     if (!username) {
@@ -75,23 +78,23 @@ export const authRouter = {
 
   getMsAccountInfo: base.handler(async ({ context: { username } }) => {
     if (!username) {
-      return { connected: false as const, accountInfo: null, accessTokenExpiresAt: null, refreshTokenExpiresAt: null }
+      return DISCONNECTED
     }
 
     let token
     try {
       token = getActiveToken(db)
     } catch {
-      return { connected: false as const, accountInfo: null, accessTokenExpiresAt: null, refreshTokenExpiresAt: null }
+      return DISCONNECTED
     }
     if (!token) {
-      return { connected: false as const, accountInfo: null, accessTokenExpiresAt: null, refreshTokenExpiresAt: null }
+      return DISCONNECTED
     }
 
     const client = createGraphClient({ accessToken: token.accessToken })
     const me = await client.getMe()
 
-    const refreshExpiresAt = new Date(token.expiresAt.getTime() + (90 * 24 - 1) * 60 * 60 * 1000)
+    const refreshExpiresAt = new Date(token.expiresAt.getTime() + MS_REFRESH_TOKEN_LIFETIME_MS)
 
     return {
       connected: true as const,

@@ -3,7 +3,7 @@ import { consola } from 'consola'
 import { db } from '../../db/client'
 import { getActiveToken } from '../../db/get-active-token'
 import { createGraphClient } from '../../ms-graph/graph-client'
-import type { ChatMessage } from '../../ms-graph/types'
+import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import { liveEventSchema, getEventPublisher } from '../../utils/event-bus'
 import { prefetchMessageImages } from '../../utils/image-cache'
 import { getMsSubscriptionsByClientStates, updateLastMessageAt } from '../../utils/ms-subscription-store'
@@ -28,20 +28,24 @@ function resourceToPath(resource: string): string {
   }
 }
 
+function publishError(publisher: ReturnType<typeof getEventPublisher>, chatId: string, data: Record<string, unknown>) {
+  const parsed = liveEventSchema.safeParse({ type: 'error' as const, chatId, data })
+  if (parsed.success) publisher.publish('chat:*', parsed.data)
+}
+
 export default defineEventHandler(async (event) => {
   const clientIp = getRequestIP(event, { xForwardedFor: true }) ?? 'unknown'
   const query = getQuery(event)
   const validationToken = query.validationToken
-  if (typeof validationToken === 'string' || (Array.isArray(validationToken) && validationToken.length > 0)) {
-    const token = typeof validationToken === 'string' ? validationToken : validationToken[0]!
+  const token = Array.isArray(validationToken) ? validationToken[0] : validationToken
+  if (typeof token === 'string') {
     setResponseStatus(event, 200)
     return token
   }
 
   if (event.method === 'POST') {
     consola.info(`[webhook] POST from ${clientIp}`)
-    const body = await readBody(event)
-    const rawNotifications = body?.value
+    const rawNotifications = (await readBody(event))?.value
     if (!Array.isArray(rawNotifications)) {
       setResponseStatus(event, 202)
       return { success: true }
@@ -89,10 +93,10 @@ export default defineEventHandler(async (event) => {
 
       // Build batch requests (max 20 per batch)
       const BATCH_LIMIT = 20
-      const chunks: Array<{ notification: Record<string, unknown>; chatId: string }[]> = []
-      for (let i = 0; i < validNotifications.length; i += BATCH_LIMIT) {
-        chunks.push(validNotifications.slice(i, i + BATCH_LIMIT))
-      }
+      const chunks = Array.from(
+        { length: Math.ceil(validNotifications.length / BATCH_LIMIT) },
+        (_, i) => validNotifications.slice(i * BATCH_LIMIT, (i + 1) * BATCH_LIMIT),
+      )
 
       const allBatchResults = await Promise.all(
         chunks.map((chunk) => {
@@ -106,19 +110,15 @@ export default defineEventHandler(async (event) => {
       )
 
       // Process each result
-      for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
-        const chunk = chunks[chunkIdx]!
+      for (const [chunkIdx, chunk] of chunks.entries()) {
         const batchResults = allBatchResults[chunkIdx]!
 
-        for (let i = 0; i < chunk.length; i++) {
-          const { notification, chatId } = chunk[i]!
+        for (const [i, { notification, chatId }] of chunk.entries()) {
           const result = batchResults.find((r) => r.id === String(i))
 
           if (!result || result.status !== 200 || !result.body) {
             consola.error(`[webhook] Failed to fetch message for ${notification.resource}: status=${result?.status ?? 'no result'}`)
-            const errorPayload = { type: 'error' as const, data: { resource: notification.resource, fetchFailed: true }, chatId }
-            const errorParsed = liveEventSchema.safeParse(errorPayload)
-            if (errorParsed.success) publisher.publish('chat:*', errorParsed.data)
+            publishError(publisher, chatId, { resource: notification.resource, fetchFailed: true })
             continue
           }
 
@@ -147,19 +147,13 @@ export default defineEventHandler(async (event) => {
             }
           } catch (err) {
             consola.error(`[webhook] Error processing message for ${notification.resource}:`, err)
-            const errorPayload = { type: 'error' as const, data: { resource: notification.resource, fetchFailed: true }, chatId }
-            const errorParsed = liveEventSchema.safeParse(errorPayload)
-            if (errorParsed.success) publisher.publish('chat:*', errorParsed.data)
+            publishError(publisher, chatId, { resource: notification.resource, fetchFailed: true })
           }
         }
       }
     } else if (!token && validNotifications.length > 0) {
       for (const { notification, chatId } of validNotifications) {
-        const noTokenPayload = { type: 'error' as const, data: { resource: notification.resource, noToken: true }, chatId }
-        const noTokenParsed = liveEventSchema.safeParse(noTokenPayload)
-        if (noTokenParsed.success) {
-          publisher.publish('chat:*', noTokenParsed.data)
-        }
+        publishError(publisher, chatId, { resource: notification.resource, noToken: true })
       }
     }
 

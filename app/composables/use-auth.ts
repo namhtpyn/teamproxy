@@ -1,20 +1,9 @@
 import type { UserRole } from '#shared/utils/enums'
 
-interface AuthUser {
-  id: string
-  displayName: string | null
-  role?: UserRole
-}
-
 interface AuthStatus {
   authenticated: boolean
-  user: AuthUser | null
+  user: { id: string; displayName: string | null; role?: UserRole } | null
 }
-
-type CookieAuthStatus = {
-  authenticated: boolean
-  user: { id: string; displayName: string | null } | null
-} | null
 
 const AUTH_COOKIE_NAME = 'auth'
 const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30
@@ -24,7 +13,7 @@ let inflightPromise: Promise<void> | null = null
 export function useAuth() {
   const { $orpcClient: $orpc } = useNuxtApp()
 
-  const authCookie = useCookie<CookieAuthStatus>(AUTH_COOKIE_NAME, {
+  const authCookie = useCookie<{ authenticated: boolean; user: { id: string; displayName: string | null } | null } | null>(AUTH_COOKIE_NAME, {
     maxAge: AUTH_COOKIE_MAX_AGE,
     path: '/',
     sameSite: 'lax',

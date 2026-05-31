@@ -6,7 +6,6 @@ import { useScroll } from '@vueuse/core'
 const props = defineProps<{
   messages: (ChatMessage | OptimisticChatMessage)[]
   loadingMore: boolean
-  msUserId?: string | null
   editingMessageId?: string | null
   pinnedMessageIds?: string[]
   members?: ChatMember[]
@@ -90,10 +89,9 @@ defineExpose({ scrollToBottom, isNearBottom })
            v-for="msg in messages"
            :key="msg.id"
            :msg="msg"
-            :ms-user-id="msUserId"
-            :members="members"
-            :editing="msg.id === editingMessageId"
-           :pinned="pinnedMessageIds?.includes(msg.id!) ?? false"
+             :members="members"
+             :editing="msg.id === editingMessageId"
+            :pinned="pinnedMessageIds?.includes(msg.id!) ?? false"
            @retry="emit('retry', msg.id!)"
            @react="emit('react', { messageId: msg.id!, reactionType: $event })"
            @reply="emit('reply', $event)"

@@ -5,6 +5,13 @@ const { $orpcClient: $orpc } = useNuxtApp()
 const toast = useToast()
 const { copy } = useClipboard()
 
+const DISCONNECTED_STATE = {
+  connected: false as boolean,
+  accountInfo: null as { displayName: string; email: string | null } | null,
+  accessTokenExpiresAt: null as string | null,
+  refreshTokenExpiresAt: null as string | null,
+}
+
 const msError = ref<string | null>(null)
 
 const { state: msAccount, isLoading: msLoading, execute: fetchAccountInfo } = useAsyncState(
@@ -12,7 +19,7 @@ const { state: msAccount, isLoading: msLoading, execute: fetchAccountInfo } = us
     const info = await $orpc.auth.getMsAccountInfo()
     return info
   },
-  { connected: false as boolean, accountInfo: null as { displayName: string; email: string | null } | null, accessTokenExpiresAt: null as string | null, refreshTokenExpiresAt: null as string | null },
+  DISCONNECTED_STATE,
 )
 
 const msConnected = computed(() => msAccount.value.connected)
@@ -79,7 +86,7 @@ async function connectMicrosoft() {
   msError.value = null
   try {
     const result = await $orpc.auth.getMicrosoftAuthUrl()
-    window.location.href = result.url
+    await navigateTo(result.url, { external: true })
   } catch (err: unknown) {
     msError.value = getErrorMessage(err, 'Failed to connect Microsoft account')
   }
@@ -88,7 +95,7 @@ async function connectMicrosoft() {
 async function disconnectMicrosoft() {
   try {
     await $orpc.auth.disconnectMs()
-    msAccount.value = { connected: false, accountInfo: null, accessTokenExpiresAt: null, refreshTokenExpiresAt: null }
+    msAccount.value = DISCONNECTED_STATE
     navigateTo('/settings?disconnected=true')
   } catch (err: unknown) {
     msError.value = getErrorMessage(err, 'Failed to disconnect Microsoft account')

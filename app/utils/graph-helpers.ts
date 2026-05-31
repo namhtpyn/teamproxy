@@ -2,7 +2,7 @@ import type { ChatMessage, ChatMessageInfo, ChatMessageReaction, ConversationMem
 import type { ChatType, MessageType } from '#shared/utils/enums'
 import type { Chat, ChatMember, LastMessagePreview } from '~/types/chat'
 
-export function getMessageContent(msg: ChatMessage): string {
+export function getMessageContent(msg: ChatMessage) {
   return msg.body?.content ?? ''
 }
 
@@ -12,7 +12,7 @@ export function getSender(msg: ChatMessage): { id: string; displayName: string }
   return { id: user.id ?? '', displayName: user.displayName ?? 'Unknown' }
 }
 
-export function getEventDetail(msg: ChatMessage): Record<string, unknown> | null {
+export function getEventDetail(msg: ChatMessage) {
   return msg.eventDetail as Record<string, unknown> | null
 }
 
@@ -55,7 +55,7 @@ export function getLastMessageReadDateTime(chat: Chat): string | null {
   return chat.viewpoint?.lastMessageReadDateTime ?? null
 }
 
-export function setLastMessagePreview(chat: Chat, preview: LastMessagePreview): void {
+export function setLastMessagePreview(chat: Chat, preview: LastMessagePreview) {
   chat.lastMessagePreview = {
     id: preview.id,
     createdDateTime: preview.createdDateTime,
@@ -67,7 +67,7 @@ export function setLastMessagePreview(chat: Chat, preview: LastMessagePreview): 
   } as unknown as ChatMessageInfo
 }
 
-export function setLastMessageReadDateTime(chat: Chat, dateTime: string): void {
+export function setLastMessageReadDateTime(chat: Chat, dateTime: string) {
   if (!chat.viewpoint) {
     (chat as unknown as Record<string, unknown>).viewpoint = {
       isHidden: false,
@@ -88,7 +88,7 @@ const REACTION_TYPE_MAP: Record<string, string> = {
   angry: '😡',
 }
 
-export function resolveReactionEmoji(reactionType: string): string {
+export function resolveReactionEmoji(reactionType: string) {
   if (reactionType.length > 2 || /[\u{1F000}-\u{1FFFF}]/u.test(reactionType)) return reactionType
   return REACTION_TYPE_MAP[reactionType] ?? reactionType
 }

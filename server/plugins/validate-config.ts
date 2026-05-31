@@ -19,5 +19,5 @@ export default defineNitroPlugin(() => {
     throw new Error(`Missing required environment variables:\n${list}\n\nCheck your .env file.`)
   }
 
-  validateCredentials(config.appAdmin as string, config.appUser as string)
+  validateCredentials(config.appAdmin, config.appUser)
 })

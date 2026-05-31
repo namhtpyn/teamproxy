@@ -1,4 +1,4 @@
-export function formatDateTime(dateStr: string): string {
+export function formatDateTime(dateStr: string) {
   return new Date(dateStr).toLocaleDateString([], {
     year: 'numeric',
     month: 'short',
@@ -8,7 +8,7 @@ export function formatDateTime(dateStr: string): string {
   })
 }
 
-export function formatMessageTime(dateStr: string): string {
+export function formatMessageTime(dateStr: string) {
   return new Date(dateStr).toLocaleString([], {
     weekday: 'short',
     year: 'numeric',

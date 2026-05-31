@@ -6,12 +6,13 @@ import type { ChatMember, OptimisticChatMessage } from '~/types/chat'
 const props = withDefaults(defineProps<{
   chatId: string
   members: ChatMember[]
-  msUserId?: string | null
   disabled: boolean
   replyingTo?: ChatMessage | OptimisticChatMessage | null
 }>(), {
   replyingTo: null,
 })
+
+const { msUserId } = useMsUser()
 
 const emit = defineEmits<{
   submit: [payload: {
@@ -43,7 +44,7 @@ function extractMentionsFromEditor(): Array<{ userId: string; displayName: strin
   return mentions
 }
 
-function extractPlainText(html: string): string {
+function extractPlainText(html: string) {
   const div = document.createElement('div')
   div.innerHTML = html
   return (div.textContent ?? '').trim()
@@ -92,7 +93,7 @@ function sendMessage() {
   })
 }
 
-function handleEditorKeydown(_view: unknown, event: KeyboardEvent): boolean {
+function handleEditorKeydown(_view: unknown, event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     sendMessage()
@@ -101,7 +102,7 @@ function handleEditorKeydown(_view: unknown, event: KeyboardEvent): boolean {
   return false
 }
 
-function handleEditorPaste(_view: unknown, event: ClipboardEvent): boolean {
+function handleEditorPaste(_view: unknown, event: ClipboardEvent) {
   const files = Array.from(event.clipboardData?.files ?? [])
   const imageFile = files.find(f => f.type.startsWith('image/'))
   if (imageFile && capturedEditor.value && !capturedEditor.value.isDestroyed) {
@@ -141,7 +142,7 @@ const mentionAppendTo = () => document.body
 
 const mentionItems = computed(() =>
   props.members
-    .filter((m): m is ChatMember & { userId: string } => m.userId != null && m.userId !== props.msUserId)
+    .filter((m): m is ChatMember & { userId: string } => m.userId != null && m.userId !== msUserId.value)
     .map(m => ({ label: m.displayName, id: m.userId })),
 )
 

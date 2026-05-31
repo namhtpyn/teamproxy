@@ -8,11 +8,12 @@ import { onClickOutside } from '@vueuse/core'
 
 const props = defineProps<{
   msg: ChatMessage | OptimisticChatMessage
-  msUserId?: string | null
   members?: ChatMember[]
   editing?: boolean
   pinned?: boolean
 }>()
+
+const { msUserId } = useMsUser()
 
 const emit = defineEmits<{
   retry: []
@@ -27,19 +28,13 @@ const emit = defineEmits<{
 }>()
 
 const sender = computed(() => getSender(props.msg))
-const isOwn = computed(() => !!props.msUserId && sender.value?.id === props.msUserId)
+const isOwn = computed(() => !!msUserId.value && sender.value?.id === msUserId.value)
 const isSending = computed(() => props.msg.id?.startsWith('temp:') && !('sendFailed' in props.msg && props.msg.sendFailed))
 const isSystemEvent = computed(() => !!getEventDetail(props.msg))
 const systemEventInfo = computed(() => getSystemEventInfo(getEventDetail(props.msg)))
 const isDeleted = computed(() => !!(props.msg as Record<string, unknown>).deletedDateTime)
 
 const content = computed(() => getMessageContent(props.msg))
-
-const plainTextContent = computed(() => {
-  const raw = props.msg.body?.content ?? ''
-  const doc = new DOMParser().parseFromString(raw, 'text/html')
-  return (doc.body.textContent ?? '').trim()
-})
 
 const editDraft = ref('')
 const editEditorRef = shallowRef<import('@tiptap/vue-3').Editor | null>(null)
@@ -52,7 +47,7 @@ watch(() => props.editing, (isEditing) => {
   }
 })
 
-function handleEditKeydown(_view: unknown, event: KeyboardEvent): boolean {
+function handleEditKeydown(_view: unknown, event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     saveEdit()
@@ -131,12 +126,10 @@ const { open } = useLightbox()
 function handleImageError(event: Event) {
   const img = event.target as HTMLImageElement
   if (!img.classList.contains('inline-chat-img')) return
-  img.style.display = 'none'
   const placeholder = document.createElement('div')
   placeholder.className = 'inline-chat-img-placeholder'
-  placeholder.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--ui-bg-elevated);border:1px dashed var(--ui-border);border-radius:8px;color:var(--ui-text-muted);font-size:0.8rem;max-width:200px;'
-  placeholder.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg> Image expired'
-  img.parentNode?.insertBefore(placeholder, img)
+  placeholder.textContent = '⚠ Image expired'
+  img.replaceWith(placeholder)
 }
 
 function handleContentClick(e: MouseEvent) {
@@ -153,14 +146,14 @@ function handleContentClick(e: MouseEvent) {
 
 const sendFailed = computed(() => ('sendFailed' in props.msg ? props.msg.sendFailed : undefined))
 
-const reactionGroups = computed(() => groupReactions(props.msg.reactions ?? undefined, props.msUserId))
+const reactionGroups = computed(() => groupReactions(props.msg.reactions ?? undefined, msUserId.value))
 const showReactionPicker = ref(false)
 const canReact = computed(() => !isSystemEvent.value && !isSending.value && !props.msg.id?.startsWith('temp:'))
 
 const contextItems = computed(() => {
   const items: ContextMenuItem[][] = []
 
-  const actions: ContextMenuItem[] = [
+  const actions = [
     { label: 'Reply', icon: 'i-lucide-reply', onSelect: () => emit('reply', props.msg.id!) },
     { label: 'React', icon: 'i-lucide-smile-plus', onSelect: () => { showReactionPicker.value = true } },
   ]
@@ -237,7 +230,7 @@ const mentionAppendTo = () => document.body
 
 const mentionItems = computed(() =>
   (props.members ?? [])
-    .filter((m): m is ChatMember & { userId: string } => m.userId != null && m.userId !== props.msUserId)
+    .filter((m): m is ChatMember & { userId: string } => m.userId != null && m.userId !== msUserId.value)
     .map(m => ({ label: m.displayName, id: m.userId })),
 )
 
@@ -301,6 +294,7 @@ const mentionItems = computed(() =>
                 :ui="editEditorUi"
               >
                 <template #default="{ editor }">
+                  <!-- Capture editor instance from slot prop — standard Vue workaround for binding slot props to local variables -->
                   <Component :is="() => { editEditorRef = editor; return null }" />
                   <UEditorMentionMenu :editor="editor" :items="mentionItems" :append-to="mentionAppendTo" />
                 </template>

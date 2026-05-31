@@ -3,9 +3,9 @@ export { graphRequest } from './client'
 export { GraphAPIError } from './client'
 export { GraphAuthError } from './client'
 export { GRAPH_BASE } from './client'
-import type { Chat, ChatMessage, Subscription } from './types'
+import type { Chat, ChatMessage, Subscription } from '@microsoft/microsoft-graph-types'
 
-export interface GraphClientOptions {
+interface GraphClientOptions {
   accessToken: string
 }
 
@@ -18,7 +18,7 @@ export interface ODataQueryParams {
   $select?: string
 }
 
-export interface CreateSubscriptionParams {
+interface CreateSubscriptionParams {
   changeType: string
   notificationUrl: string
   resource: string
@@ -26,7 +26,7 @@ export interface CreateSubscriptionParams {
   clientState: string
 }
 
-export interface RenewSubscriptionParams {
+interface RenewSubscriptionParams {
   expirationDateTime: string
 }
 
@@ -39,7 +39,7 @@ function toQueryParams(params?: ODataQueryParams): Record<string, string> | unde
   return result
 }
 
-export interface BatchResponseItem {
+interface BatchResponseItem {
   id: string
   status: number
   body?: unknown
@@ -120,20 +120,6 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
             messageIds: [messageId],
             replyMessage: { body },
           },
-          accessToken,
-        })
-      },
-      getMessage(resource: string): Promise<ChatMessage | undefined> {
-        let apiPath: string
-        if (resource.startsWith('/')) {
-          apiPath = resource.replace(/^\/v1\.0/, '')
-        } else {
-          const url = new URL(resource)
-          apiPath = url.pathname.replace(/^\/v1\.0/, '')
-        }
-        return graphRequest<ChatMessage>({
-          method: 'GET',
-          path: apiPath,
           accessToken,
         })
       },

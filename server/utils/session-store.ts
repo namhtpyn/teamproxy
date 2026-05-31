@@ -3,6 +3,8 @@ import { sessions } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import type { UserRole } from '#shared/utils/enums'
 
+const MS_PER_DAY = 86_400_000
+
 export function createSession(username: string, role: UserRole): string {
   const token = crypto.randomUUID()
   db.insert(sessions).values({ token, username, role }).run()
@@ -13,7 +15,7 @@ export function resolveSession(
   token: string,
 ): { username: string; role: UserRole } | undefined {
   const config = useRuntimeConfig()
-  const threshold = new Date(Date.now() - config.sessionMaxAgeDays * 86_400_000)
+  const threshold = new Date(Date.now() - config.sessionMaxAgeDays * MS_PER_DAY)
   const row = db.query.sessions.findFirst({
     where: { AND: [{ token }, { createdAt: { gte: threshold } }] },
   }).sync()

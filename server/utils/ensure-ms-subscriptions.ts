@@ -26,16 +26,11 @@ export async function ensureMsSubscriptions(): Promise<{ renewed: number; create
   const subscribed = getMsSubscribedChats()
   const expiring = subscribed.filter(s => s.subscriptionExpiresAt > now && s.subscriptionExpiresAt < soon)
 
-  let renewed = 0
-  let failed = 0
-
-  if (expiring.length > 0) {
-    const result = await renewMsSubscriptions(client, expiring, expirationDateTime, (_chatId, msSubId, err) => {
-      consola.error(`[ensure-ms-subscriptions] Renew failed ${msSubId}:`, err)
-    })
-    renewed = result.renewed
-    failed = result.failed
-  }
+  let { renewed, failed } = expiring.length > 0
+    ? await renewMsSubscriptions(client, expiring, expirationDateTime, (_chatId, msSubId, err) => {
+        consola.error(`[ensure-ms-subscriptions] Renew failed ${msSubId}:`, err)
+      })
+    : { renewed: 0, failed: 0 }
 
   // 2. Create subscriptions for allowed chats missing active subscriptions (needs origin)
   const origin = getWebhookOrigin()

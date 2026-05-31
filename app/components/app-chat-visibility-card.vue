@@ -108,7 +108,7 @@ const columns: TableColumn<VisibilityChatRow>[] = [
   { id: 'canRespond', header: 'Respond' },
 ]
 
-function findChatIndex(chatId: string): number {
+function findChatIndex(chatId: string) {
   return displayedChats.value.findIndex(c => c.id === chatId)
 }
 
@@ -170,7 +170,7 @@ async function toggleRespond(chat: VisibilityChat) {
   togglingId.value = null
 }
 
-function chatTypeLabel(chatType: string): string {
+function chatTypeLabel(chatType: string) {
   if (chatType === 'group') return 'Group'
   if (chatType === 'meeting') return 'Meeting'
   return 'One-to-one'
@@ -226,7 +226,6 @@ function chatTypeLabel(chatType: string): string {
           :data="tableData"
           :columns="columns"
           :loading="loading"
-        >
         >
           <template #name-cell="{ row }">
             <div class="min-w-0 break-words">

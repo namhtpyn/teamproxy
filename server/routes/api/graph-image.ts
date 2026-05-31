@@ -6,16 +6,7 @@ import { getActiveToken } from '../../db/get-active-token'
 import { db } from '../../db/client'
 import { GRAPH_BASE } from '../../ms-graph/graph-client'
 import { getCachedImagePath, cacheImage } from '../../utils/image-cache'
-
-const EXT_TO_CONTENT_TYPE: Record<string, string> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.bmp': 'image/bmp',
-  '.svg': 'image/svg+xml',
-}
+import { EXT_TO_CONTENT_TYPE } from '../../utils/image-content-types'
 
 const TRANSPARENT_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQABNjN9GQAAAAlwSFlzAAAWJQAAFiUBSVIk8AAAAA0lEQVQI12P4z8BQDwAEgAF/QualGQAAAABJRU5ErkJggg==',

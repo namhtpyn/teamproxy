@@ -1,15 +1,10 @@
 import { computed, ref } from 'vue'
 
-interface MsUser {
-  id: string
-  displayName: string
-}
-
 let inflightPromise: Promise<void> | null = null
 
 export function useMsUser() {
   const { $orpcClient: $orpc } = useNuxtApp()
-  const msUser = useState<MsUser | null>('ms-user', () => null)
+  const msUser = useState<{ id: string; displayName: string } | null>('ms-user', () => null)
   const loading = ref(false)
 
   async function ensure() {

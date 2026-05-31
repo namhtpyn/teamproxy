@@ -30,7 +30,3 @@ export function rateLimit(ip: string, namespace = 'default'): { allowed: boolean
   return { allowed: true, retryAfter: 0 }
 }
 
-/** @internal Test-only reset */
-export function _resetRateLimitForTesting() {
-  attempts.clear()
-}

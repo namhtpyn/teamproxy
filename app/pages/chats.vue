@@ -38,10 +38,9 @@ function updateSidebarChat(chatId: string, raw: Record<string, unknown> | null) 
   const body = msg.body
   const createdAt = msg.createdDateTime ?? new Date().toISOString()
 
-  let previewContent = body?.content ?? ''
-  if (msg.eventDetail) {
-    previewContent = getSystemEventInfo(msg.eventDetail as Record<string, unknown>)?.text ?? 'System event'
-  }
+  const previewContent = msg.eventDetail
+    ? (getSystemEventInfo(msg.eventDetail as Record<string, unknown>)?.text ?? 'System event')
+    : (body?.content ?? '')
 
   setLastMessagePreview(chat, {
     id: msg.id ?? '',

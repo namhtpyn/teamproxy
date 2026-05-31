@@ -8,6 +8,3 @@ export function setCachedMsUser(user: { id: string; displayName: string }) {
   cached = user
 }
 
-export function clearCachedMsUser() {
-  cached = null
-}

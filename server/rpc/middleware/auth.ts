@@ -33,7 +33,7 @@ const requireAdmin = base.middleware(async ({ context: { role }, next }) => {
   if (role !== 'admin') {
     throw new ORPCError('FORBIDDEN', { message: 'Admin access required' })
   }
-  return next({ context: { role: 'admin' as UserRole } })
+    return next({ context: { role: 'admin' as UserRole } })
 })
 
 export const authed = base.use(requireSession.concat(resolveToken))

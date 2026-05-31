@@ -1,7 +1,7 @@
 import type { Chat } from '~/types/chat'
 import { getChatMembers, getChatTopic } from './graph-helpers'
 
-export function stripHtml(html: string): string {
+export function stripHtml(html: string) {
   return html
     .replace(/<br\s*\/?>/gi, ' ')
     .replace(/<[^>]*>/g, '')
@@ -15,7 +15,7 @@ export function stripHtml(html: string): string {
     .trim()
 }
 
-export function getChatDisplayName(chat: Chat, currentUserId?: string | null): string {
+export function getChatDisplayName(chat: Chat, currentUserId?: string | null) {
   const topic = getChatTopic(chat)
   if (topic) return topic
   if (!currentUserId) return ''
@@ -24,7 +24,7 @@ export function getChatDisplayName(chat: Chat, currentUserId?: string | null): s
   return other?.displayName ?? 'Unknown'
 }
 
-export function getChatInitial(chat: Chat, currentUserId?: string | null): string {
+export function getChatInitial(chat: Chat, currentUserId?: string | null) {
   const name = getChatDisplayName(chat, currentUserId)
   return name ? name.charAt(0).toUpperCase() : ''
 }

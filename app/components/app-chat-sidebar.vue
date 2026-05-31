@@ -26,7 +26,7 @@ const { state: chats, isLoading: chatsLoading, error: chatsError, execute: fetch
   [] as Chat[],
 )
 
-function checkUnread(chat: Chat): boolean {
+function checkUnread(chat: Chat) {
   const preview = getLastMessagePreview(chat)
   const readDateTime = getLastMessageReadDateTime(chat)
   if (!preview || !readDateTime) return false
