@@ -1,2 +1,9 @@
 @import 'tailwindcss';
 @import '@nuxt/ui';
+
+[data-message-content] a {
+  text-decoration: none;
+}
+[data-message-content] a:hover {
+  text-decoration: underline;
+}

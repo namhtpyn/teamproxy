@@ -127,6 +127,13 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
           accessToken,
         })
       },
+      async deleteMessage(chatId: string, messageId: string): Promise<void> {
+        await graphRequest({
+          method: 'DELETE',
+          path: `/chats/${chatId}/messages/${messageId}`,
+          accessToken,
+        })
+      },
     },
     teams: {
       async list(): Promise<Team[]> {

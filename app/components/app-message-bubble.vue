@@ -57,6 +57,8 @@ const renderedContent = computed(() => {
     .replace(/<\/p>/gi, '<br>')
     // Style inline images like Teams (rounded, max-height, zoom cursor)
     .replace(/(<img[^>]*?)>/gi, '$1 class="inline-chat-img" style="max-height:200px;border-radius:8px;display:block;margin:4px 0;cursor:zoom-in" loading="lazy">')
+    // Style links like Teams (purple, hover underline) — target blank for safety
+    .replace(/<a\s+/gi, '<a target="_blank" rel="noopener noreferrer" style="color:#6264a7" ')
     // Remove trailing <br>
     .replace(/<br>\s*$/i, '')
     .trim()

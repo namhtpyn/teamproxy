@@ -281,7 +281,19 @@ function onEdit(messageId: string) {
 }
 
 function onDelete(messageId: string) {
-  console.log('delete message', messageId)
+  if (!props.chat) return
+  const chatId = props.chat.id!
+
+  const idx = messages.value.findIndex(m => m.id === messageId)
+  if (idx === -1) return
+
+  const removed = messages.value[idx]
+  messages.value = messages.value.filter(m => m.id !== messageId)
+
+  $orpc.chats.deleteMessage({ chatId, messageId }).catch((err: unknown) => {
+    messages.value.splice(idx, 0, removed)
+    toast.add({ title: 'Failed to delete message', description: getErrorMessage(err, 'Failed to delete'), color: 'error' })
+  })
 }
 </script>
 

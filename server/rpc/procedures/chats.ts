@@ -153,6 +153,23 @@ export const chatsRouter = {
       return { message: response as ChatMessage }
     }),
 
+  deleteMessage: authed
+    .use(rateLimited)
+    .input(
+      z.object({
+        chatId: z.string(),
+        messageId: z.string(),
+      }),
+    )
+    .handler(async ({ input, context: { accessToken } }) => {
+      const chatAccess = getAllowedChat(input.chatId)
+      if (!chatAccess || !chatAccess.allowed || !chatAccess.canRespond) {
+        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to delete messages in this chat' })
+      }
+      const client = createGraphClient({ accessToken })
+      await client.chats.deleteMessage(input.chatId, input.messageId)
+    }),
+
   setReaction: authed
     .use(rateLimited)
     .input(

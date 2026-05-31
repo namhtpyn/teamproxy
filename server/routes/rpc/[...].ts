@@ -24,7 +24,7 @@ const handler = new RPCHandler(appRouter, {
       }
       if (error instanceof GraphAPIError) {
         if (error.status === 404) {
-          throw new ORPCError('NOT_FOUND', { message: error.message })
+          throw new ORPCError('NOT_FOUND', { message: `Resource not found: ${error.message}` })
         }
         if (error.status === 429) {
           throw new ORPCError('TOO_MANY_REQUESTS', { message: error.message })
@@ -53,6 +53,7 @@ export default defineEventHandler(async (event) => {
       origin,
     },
   })
+  console.log('[RPC] Response:', response?.status)
 
   if (response) {
     return response
