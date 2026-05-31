@@ -25,10 +25,10 @@ const emit = defineEmits<{
 }>()
 
 const editorContent = ref('')
-let editorInstance: Editor | null = null
+const capturedEditor = shallowRef<Editor | null>(null)
 
 function extractMentionsFromEditor(): Array<{ userId: string; displayName: string }> {
-  const editor = editorInstance
+  const editor = capturedEditor.value
   if (!editor || editor.isDestroyed) return []
   const mentions: Array<{ userId: string; displayName: string }> = []
   editor.state.doc.descendants((node) => {
@@ -50,7 +50,7 @@ function extractPlainText(html: string): string {
 }
 
 function sendMessage() {
-  const editor = editorInstance
+  const editor = capturedEditor.value
   if (!editor || editor.isDestroyed) return
 
   const mentions = extractMentionsFromEditor()
@@ -60,7 +60,9 @@ function sendMessage() {
   const images: { dataUrl: string; tempId: string; original: string }[] = []
   let match: RegExpExecArray | null
   while ((match = imageRegex.exec(html)) !== null) {
-    images.push({ dataUrl: match[1], tempId: String(images.length + 1), original: match[0] })
+    const dataUrl = match[1]
+    if (!dataUrl) continue
+    images.push({ dataUrl, tempId: String(images.length + 1), original: match[0] })
   }
   for (const img of images) {
     html = html.replace(img.original, `<img src="../hostedContents/${img.tempId}/$value">`)
@@ -73,7 +75,7 @@ function sendMessage() {
 
   const hostedContents = images.map((img, i) => {
     const imgMatch = img.dataUrl.match(/^data:(image\/\w+);base64,(.+)$/)
-    if (!imgMatch) return null
+    if (!imgMatch?.[1] || !imgMatch[2]) return null
     return {
       temporaryId: String(i + 1),
       contentBytes: imgMatch[2],
@@ -102,12 +104,13 @@ function handleEditorKeydown(_view: unknown, event: KeyboardEvent): boolean {
 function handleEditorPaste(_view: unknown, event: ClipboardEvent): boolean {
   const files = Array.from(event.clipboardData?.files ?? [])
   const imageFile = files.find(f => f.type.startsWith('image/'))
-  if (imageFile && editorInstance && !editorInstance.isDestroyed) {
+  if (imageFile && capturedEditor.value && !capturedEditor.value.isDestroyed) {
     event.preventDefault()
+    const editor = capturedEditor.value
     const reader = new FileReader()
     reader.onload = () => {
       const dataUrl = reader.result as string
-      editorInstance!.chain().focus().setImage({ src: dataUrl }).run()
+      editor.chain().focus().setImage({ src: dataUrl }).run()
     }
     reader.readAsDataURL(imageFile)
     return true
@@ -122,11 +125,11 @@ const editorUi = {
 }
 
 const editorStarterKit = {
-  blockquote: false,
-  codeBlock: false,
-  heading: false,
-  bulletList: false,
-  orderedList: false,
+  blockquote: false as const,
+  codeBlock: false as const,
+  heading: false as const,
+  bulletList: false as const,
+  orderedList: false as const,
 }
 
 const editorPropsConfig = {
@@ -191,7 +194,7 @@ watch(() => props.chatId, () => {
           >
             <template #default="{ editor }">
               <!-- Capture editor instance from slot prop — standard Vue workaround for binding slot props to local variables -->
-              <Component :is="() => { editorInstance = editor; return null }" />
+              <Component :is="() => { capturedEditor = editor; return null }" />
               <UEditorMentionMenu :editor="editor" :items="mentionItems" :append-to="mentionAppendTo" />
             </template>
           </UEditor>

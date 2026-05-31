@@ -160,20 +160,21 @@ const contextItems = computed(() => {
   return items
 })
 
-const { copy, copied } = useClipboard()
 const toast = useToast()
 
-watch(copied, (isCopied) => {
-  if (isCopied) toast.add({ title: 'Copied!', color: 'success' })
-})
-
-function copyMessage() {
-  const brConverted = renderedContent.value.replace(/<br\s*\/?>/gi, '\n')
+async function copyMessage() {
+  const html = renderedContent.value
+  const brConverted = html.replace(/<br\s*\/?>/gi, '\n')
   const doc = new DOMParser().parseFromString(brConverted, 'text/html')
   const text = (doc.body.textContent ?? '').trim()
-  copy(text).catch(() => {
+  try {
+    const htmlBlob = new Blob([html], { type: 'text/html' })
+    const textBlob = new Blob([text], { type: 'text/plain' })
+    await navigator.clipboard.write([new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })])
+    toast.add({ title: 'Copied!', color: 'success' })
+  } catch {
     toast.add({ title: 'Failed to copy message', color: 'error' })
-  })
+  }
 }
 
 function toggleReaction(reactionType: string) {
