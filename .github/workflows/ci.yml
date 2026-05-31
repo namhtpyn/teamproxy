@@ -49,7 +49,7 @@ jobs:
               "NUXT_APP_USER": "${{ secrets.NUXT_APP_USER }}",
               "NUXT_MS_CLIENT_ID": "${{ vars.NUXT_MS_CLIENT_ID }}",
               "NUXT_MS_CLIENT_SECRET": "${{ secrets.NUXT_MS_CLIENT_SECRET }}",
-              "NUXT_MS_TENANT_ID": "${{ vars.NUXT_MS_TENANT_ID }}",
+              "NUXT_MS_TENANT_ID": "${{ vars.NUXT_MS_TENANT_ID }}"
             }
           insecure: 'true'
 
