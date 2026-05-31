@@ -21,8 +21,13 @@ const search = ref('')
 
 const { state: chats, isLoading: loading, error, execute: fetchPage } = useAsyncState(
   async () => {
+    const searchValue = search.value.trim() || undefined
     const [result] = await Promise.all([
-      $orpc.chatVisibility.getVisibility({ limit: PAGE_SIZE, cursor: currentCursor.value }),
+      $orpc.chatVisibility.getVisibility({
+        limit: PAGE_SIZE,
+        cursor: searchValue ? undefined : currentCursor.value,
+        search: searchValue,
+      }),
       ensureMsUser(),
     ])
     nextCursor.value = result.nextCursor
@@ -31,43 +36,14 @@ const { state: chats, isLoading: loading, error, execute: fetchPage } = useAsync
   [] as VisibilityChat[],
 )
 
-const allChats = ref<VisibilityChat[]>([])
-const searchLoading = ref(false)
 const isSearchActive = computed(() => search.value.trim().length > 0)
 
-async function fetchAllChats() {
-  searchLoading.value = true
-  try {
-    const all: VisibilityChat[] = []
-    let cursor: string | undefined = undefined
-    do {
-      const result = await $orpc.chatVisibility.getVisibility({ limit: PAGE_SIZE, cursor })
-      all.push(...result.chats)
-      cursor = result.nextCursor
-    } while (cursor)
-    allChats.value = all
-  } catch {
-    toast.add({ title: 'Failed to search chats', color: 'error' })
-  } finally {
-    searchLoading.value = false
-  }
-}
-
-watchDebounced(search, async (q) => {
-  if (q.trim().length > 0 && allChats.value.length === 0) {
-    await fetchAllChats()
-  }
+watchDebounced(search, () => {
+  currentCursor.value = undefined
+  pageIndex.value = 0
+  pageCursors.value = [undefined]
+  fetchPage()
 }, { debounce: 300 })
-
-const displayedChats = computed(() => {
-  if (!isSearchActive.value) return chats.value
-  const q = search.value.trim().toLowerCase()
-  return allChats.value.filter((c) => {
-    const name = getChatDisplayName(c, msUserId.value).toLowerCase()
-    const type = chatTypeLabel(getChatType(c)).toLowerCase()
-    return name.includes(q) || type.includes(q)
-  })
-})
 
 const hasMore = computed(() => !isSearchActive.value && nextCursor.value !== undefined)
 const hasPrev = computed(() => !isSearchActive.value && pageIndex.value > 0)
@@ -88,14 +64,17 @@ async function goPrev() {
 }
 
 function refresh() {
-  allChats.value = []
+  search.value = ''
+  currentCursor.value = undefined
+  pageIndex.value = 0
+  pageCursors.value = [undefined]
   fetchPage()
 }
 
-const allowedCount = computed(() => displayedChats.value.filter((c) => c.allowed).length)
+const allowedCount = computed(() => chats.value.filter((c) => c.allowed).length)
 
 const tableData = computed(() =>
-  displayedChats.value.map((chat) => ({
+  chats.value.map((chat) => ({
     ...chat,
     name: getChatDisplayName(chat, msUserId.value) || 'Unnamed chat',
   })),
@@ -109,14 +88,14 @@ const columns: TableColumn<VisibilityChatRow>[] = [
 ]
 
 function findChatIndex(chatId: string) {
-  return displayedChats.value.findIndex(c => c.id === chatId)
+  return chats.value.findIndex(c => c.id === chatId)
 }
 
 async function toggleChat(chat: VisibilityChat) {
   const chatId = chat.id!
   const idx = findChatIndex(chatId)
   if (idx === -1) return
-  const original = displayedChats.value[idx]!
+  const original = chats.value[idx]!
   const snapshot = { allowed: original.allowed, canRespond: original.canRespond }
   const newValue = !original.allowed
   const previousCanRespond = original.canRespond
@@ -154,7 +133,7 @@ async function toggleRespond(chat: VisibilityChat) {
   const chatId = chat.id!
   const idx = findChatIndex(chatId)
   if (idx === -1) return
-  const original = displayedChats.value[idx]!
+  const original = chats.value[idx]!
   const snapshot = original.canRespond
   const newValue = !original.canRespond
   original.canRespond = newValue
@@ -196,7 +175,7 @@ function chatTypeLabel(chatType: string) {
               Allowed Chats
             </p>
             <p class="text-xs text-muted">
-              {{ allowedCount }} {{ isSearchActive ? 'of ' + displayedChats.length + ' results' : 'of ' + chats.length + ' chats on this page' }}
+              {{ allowedCount }} {{ isSearchActive ? 'of ' + chats.length + ' results' : 'of ' + chats.length + ' chats on this page' }}
             </p>
           </div>
         </div>
@@ -211,15 +190,15 @@ function chatTypeLabel(chatType: string) {
           icon="i-lucide-search"
           placeholder="Search chats..."
           size="sm"
-          :loading="searchLoading"
+          :loading="loading"
         />
       </div>
 
-      <div v-if="(loading || searchLoading) && displayedChats.length === 0" class="flex items-center justify-center py-8">
+      <div v-if="loading && chats.length === 0" class="flex items-center justify-center py-8">
         <AppLoadingSpinner />
       </div>
 
-      <AppEmptyState v-else-if="displayedChats.length === 0" icon="i-lucide-message-square" :message="isSearchActive ? 'No chats match your search' : 'No chats found'" />
+      <AppEmptyState v-else-if="chats.length === 0" icon="i-lucide-message-square" :message="isSearchActive ? 'No chats match your search' : 'No chats found'" />
 
       <template v-else>
         <UTable
