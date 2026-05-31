@@ -14,19 +14,18 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  submit: [payload: { content: string; image: { contentBytes: string; contentType: string } | null; mentions: Array<{ userId: string; displayName: string }> | undefined; replyToId?: string }]
+  submit: [payload: {
+    content: string
+    image: { contentBytes: string; contentType: string } | null
+    mentions: Array<{ userId: string; displayName: string }> | undefined
+    replyToId?: string
+    hostedContents?: Array<{ temporaryId: string; contentBytes: string; contentType: string }>
+  }]
   'cancel-reply': []
 }>()
 
 const editorContent = ref('')
 let editorInstance: Editor | null = null
-
-const {
-  pendingImage,
-  imageError,
-  handlePaste: handleImagePaste,
-  removePendingImage,
-} = useImageUpload()
 
 function extractMentionsFromEditor(): Array<{ userId: string; displayName: string }> {
   const editor = editorInstance
@@ -51,25 +50,47 @@ function extractPlainText(html: string): string {
 }
 
 function sendMessage() {
-  const text = extractPlainText(editorContent.value)
-  if (!text && !pendingImage.value) return
+  const editor = editorInstance
+  if (!editor || editor.isDestroyed) return
 
   const mentions = extractMentionsFromEditor()
-  const image = pendingImage.value
-    ? {
-        contentBytes: pendingImage.value.contentBytes,
-        contentType: pendingImage.value.contentType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
-      }
-    : null
+  let html = editorContent.value
+
+  const imageRegex = /<img[^>]+src="(data:image\/[^"]+)"[^>]*>/g
+  const images: { dataUrl: string; tempId: string; original: string }[] = []
+  let match: RegExpExecArray | null
+  while ((match = imageRegex.exec(html)) !== null) {
+    images.push({ dataUrl: match[1], tempId: String(images.length + 1), original: match[0] })
+  }
+  for (const img of images) {
+    html = html.replace(img.original, `<img src="../hostedContents/${img.tempId}/$value">`)
+  }
+
+  const text = extractPlainText(html)
+  if (!text && images.length === 0) return
 
   editorContent.value = ''
-  pendingImage.value = null
+
+  const hasImages = images.length > 0
+  const hasMentions = mentions.length > 0
+  const content = html
+
+  const hostedContents = images.map((img, i) => {
+    const imgMatch = img.dataUrl.match(/^data:(image\/\w+);base64,(.+)$/)
+    if (!imgMatch) return null
+    return {
+      temporaryId: String(i + 1),
+      contentBytes: imgMatch[2],
+      contentType: imgMatch[1],
+    }
+  }).filter((hc): hc is NonNullable<typeof hc> => hc !== null)
 
   emit('submit', {
-    content: text,
-    image,
-    mentions: mentions.length > 0 ? mentions : undefined,
+    content,
+    image: null,
+    mentions: hasMentions ? mentions : undefined,
     replyToId: props.replyingTo?.id?.startsWith('temp:') ? undefined : props.replyingTo?.id,
+    hostedContents: hostedContents.length > 0 ? hostedContents : undefined,
   })
 }
 
@@ -83,14 +104,25 @@ function handleEditorKeydown(_view: unknown, event: KeyboardEvent): boolean {
 }
 
 function handleEditorPaste(_view: unknown, event: ClipboardEvent): boolean {
-  handleImagePaste(event)
-  return event.defaultPrevented
+  const files = Array.from(event.clipboardData?.files ?? [])
+  const imageFile = files.find(f => f.type.startsWith('image/'))
+  if (imageFile && editorInstance && !editorInstance.isDestroyed) {
+    event.preventDefault()
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      editorInstance!.chain().focus().setImage({ src: dataUrl }).run()
+    }
+    reader.readAsDataURL(imageFile)
+    return true
+  }
+  return false
 }
 
 const editorUi = {
   root: 'rounded-lg border border-default bg-elevated overflow-hidden',
   content: 'relative min-h-[38px] max-h-[120px] overflow-y-auto',
-  base: 'w-full outline-none px-3 py-2.5 text-sm *:m-0 [&_p]:leading-6 [&_.mention]:text-primary [&_.mention]:font-medium selection:bg-primary/20',
+  base: 'w-full outline-none px-3 py-2.5 text-sm *:m-0 [&_p]:leading-6 [&_.mention]:text-primary [&_.mention]:font-medium [&_img]:max-h-[80px] [&_img]:rounded [&_img]:inline selection:bg-primary/20',
 }
 
 const editorStarterKit = {
@@ -150,20 +182,6 @@ watch(() => props.chatId, () => {
           <UIcon name="i-lucide-x" class="h-3.5 w-3.5" />
         </button>
       </div>
-      <div v-if="pendingImage" class="mx-auto w-full max-w-3xl">
-        <div class="relative inline-block">
-          <img :src="pendingImage.preview" alt="" class="max-h-40 rounded-lg object-contain">
-          <button
-            type="button"
-            aria-label="Remove image"
-            class="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-elevated text-dimmed hover:text-highlighted"
-            @click="removePendingImage"
-          >
-            <UIcon name="i-lucide-x" class="h-3 w-3" />
-          </button>
-        </div>
-      </div>
-      <p v-if="imageError" class="mt-1 text-xs text-error">{{ imageError }}</p>
       <div class="flex items-end gap-2">
         <div class="flex-1">
           <UEditor
@@ -172,7 +190,7 @@ watch(() => props.chatId, () => {
             placeholder="Type a message..."
             :starter-kit="editorStarterKit"
             :editor-props="editorPropsConfig"
-            :image="false"
+            :image="{ inline: true, allowBase64: true }"
             :ui="editorUi"
           >
             <template #default="{ editor }">

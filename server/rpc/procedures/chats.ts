@@ -75,11 +75,14 @@ export const chatsRouter = {
             }),
           )
           .optional(),
-        image: z
-          .object({
-            contentBytes: z.string().max(5_000_000, 'Image too large (max 3.75MB)'),
-            contentType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
-          })
+        hostedContents: z
+          .array(
+            z.object({
+              temporaryId: z.string(),
+              contentBytes: z.string().max(5_000_000, 'Image too large (max 3.75MB)'),
+              contentType: z.string(),
+            }),
+          )
           .optional(),
       }),
     )
@@ -105,40 +108,24 @@ export const chatsRouter = {
         : undefined
 
       let content = input.content
-      let contentType: string = 'text'
+      let contentType: string = 'html'
       const hasMentions = mentions && mentions.length > 0
-      const hasImage = !!input.image
+      const hasHostedContents = !!input.hostedContents?.length
 
-      if (hasMentions || hasImage) {
-        contentType = 'html'
-        if (hasMentions) {
-          for (const mention of mentions) {
-            content = content.replace(
-              `@${mention.mentionText}`,
-              `<at id="${mention.id}">${mention.mentionText}</at>`,
-            )
-          }
-        }
-        if (hasImage) {
-          content =
-            `<img src="../hostedContents/1/$value" width="400">` +
-            (content ? `<p>${content}</p>` : '')
+      if (hasMentions) {
+        for (const mention of mentions) {
+          content = content.replace(
+            `@${mention.mentionText}`,
+            `<at id="${mention.id}">${mention.mentionText}</at>`,
+          )
         }
       }
 
-      const hostedContents = hasImage
-        ? [
-            {
-              temporaryId: '1',
-              contentBytes: input.image!.contentBytes,
-              contentType: input.image!.contentType,
-            },
-          ]
-        : undefined
+      const hostedContents = hasHostedContents ? input.hostedContents : undefined
 
       let response: ChatMessage | undefined
 
-      if (input.replyToId && !hasImage && !hasMentions) {
+      if (input.replyToId && !hasHostedContents && !hasMentions) {
         response = await client.chats.replyWithQuote(input.chatId, input.replyToId, { contentType, content })
       } else {
         response = await client.chats.send(

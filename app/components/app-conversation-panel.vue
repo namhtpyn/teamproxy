@@ -134,7 +134,7 @@ function appendIncomingMessage(raw: Record<string, unknown>) {
   messages.value = [...messages.value, msg]
 }
 
-function handleSubmit(payload: { content: string; image: { contentBytes: string; contentType: string } | null; mentions: Array<{ userId: string; displayName: string }> | undefined; replyToId?: string }) {
+function handleSubmit(payload: { content: string; image: { contentBytes: string; contentType: string } | null; mentions: Array<{ userId: string; displayName: string }> | undefined; replyToId?: string; hostedContents?: Array<{ temporaryId: string; contentBytes: string; contentType: string }> }) {
   if (!props.chat) return
 
   const chatId = props.chat.id!
@@ -160,9 +160,7 @@ function handleSubmit(payload: { content: string; image: { contentBytes: string;
     content: payload.content,
     replyToId: payload.replyToId,
     mentions: payload.mentions,
-    image: payload.image
-      ? { contentBytes: payload.image.contentBytes, contentType: payload.image.contentType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' }
-      : undefined,
+    hostedContents: payload.hostedContents,
   }).then(({ message: real }) => {
     if (props.chat?.id !== chatId) return
     if (!pendingSends.has(tempId)) return
