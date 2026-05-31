@@ -20,11 +20,4 @@ export default defineNitroPlugin(() => {
   }
 
   validateCredentials(config.appAdmin as string, config.appUser as string)
-
-  if (!config.encryptionKey || config.encryptionKey.length < 16) {
-    throw new Error(
-      'NUXT_ENCRYPTION_KEY environment variable is required and must be at least 16 characters.\n'
-      + 'Check your .env file.',
-    )
-  }
 })

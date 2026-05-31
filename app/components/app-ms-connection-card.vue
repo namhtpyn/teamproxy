@@ -192,8 +192,8 @@ async function disconnectMicrosoft() {
           :model-value="exportData"
           readonly
           :rows="8"
-          class="font-mono text-xs"
-          :ui="{ root: 'relative flex items-center' }"
+          class="-m-4 font-mono text-xs sm:-m-6"
+          :ui="{ root: 'relative flex items-center min-w-full' }"
         />
       </template>
       <template #footer>
@@ -218,8 +218,8 @@ async function disconnectMicrosoft() {
           v-model="importData"
           placeholder="Paste base64-encoded session data here..."
           :rows="8"
-          class="font-mono text-xs"
-          :ui="{ root: 'relative flex items-center' }"
+          class="-m-4 font-mono text-xs sm:-m-6"
+          :ui="{ root: 'relative flex items-center min-w-full' }"
         />
       </template>
       <template #footer>

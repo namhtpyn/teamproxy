@@ -21,26 +21,25 @@ pnpm dev               # http://localhost:3000
 
 ### Required env vars
 
-| Variable | Purpose |
-|---|---|
-| `NUXT_DATABASE_URL` | SQLite path |
-| `NUXT_APP_ADMIN` / `NUXT_APP_USER` | Login credentials |
-| `NUXT_MS_CLIENT_ID` | MS Entra ID app ID |
-| `NUXT_MS_CLIENT_SECRET` | MS Entra ID client secret |
-| `NUXT_MS_TENANT_ID` | MS Entra ID tenant |
-| `NUXT_ENCRYPTION_KEY` | AES-256-GCM key (min 16 chars) |
+| Variable                           | Purpose                   |
+| ---------------------------------- | ------------------------- |
+| `NUXT_DATABASE_URL`                | SQLite path               |
+| `NUXT_APP_ADMIN` / `NUXT_APP_USER` | Login credentials         |
+| `NUXT_MS_CLIENT_ID`                | MS Entra ID app ID        |
+| `NUXT_MS_CLIENT_SECRET`            | MS Entra ID client secret |
+| `NUXT_MS_TENANT_ID`                | MS Entra ID tenant        |
 
 ## Scripts
 
-| Command | Description |
-|---|---|
-| `pnpm dev` | Dev server |
-| `pnpm build` | Production build |
-| `pnpm db:studio` | Drizzle Studio |
-| `pnpm db:generate` | Generate migrations |
-| `pnpm db:migrate` | Run migrations |
-| `pnpm lint` / `pnpm lint:fix` | ESLint |
-| `pnpm format` / `pnpm format:check` | Prettier |
+| Command                             | Description         |
+| ----------------------------------- | ------------------- |
+| `pnpm dev`                          | Dev server          |
+| `pnpm build`                        | Production build    |
+| `pnpm db:studio`                    | Drizzle Studio      |
+| `pnpm db:generate`                  | Generate migrations |
+| `pnpm db:migrate`                   | Run migrations      |
+| `pnpm lint` / `pnpm lint:fix`       | ESLint              |
+| `pnpm format` / `pnpm format:check` | Prettier            |
 
 ## Architecture
 

@@ -15,7 +15,6 @@ export default defineNuxtConfig({
     msClientId: '',
     msClientSecret: '',
     msTenantId: '',
-    encryptionKey: '',
     rateLimitMaxAttempts: 5,
     rateLimitWindowMs: 60000,
     sessionMaxAge: 2592000,
