@@ -10,7 +10,7 @@ import { clearMsSubscription } from '../../utils/ms-subscription-store'
 import { getMsSubscriptionStatus } from '../../utils/ms-subscription-status'
 import { getEventPublisher } from '../../utils/event-bus'
 import { createMsSubscription } from '../../utils/create-ms-subscription'
-import { getAllowedChat } from '../../utils/allowed-chats'
+import { getAllowedChat, invalidateAllowedChatsCache } from '../../utils/allowed-chats'
 import { db } from '../../db/client'
 import { allowedChats } from '../../db/schema'
 import { eq } from 'drizzle-orm'
@@ -40,6 +40,7 @@ export const chatVisibilityRouter = {
         nextLink = page?.['@odata.nextLink']
       } else {
         const query: ODataQueryParams = {
+          $select: 'id,topic,chatType,lastUpdatedDateTime,createdDateTime,members',
           $expand: 'members',
           $top: limit,
         }
@@ -95,6 +96,7 @@ export const chatVisibilityRouter = {
           })
           .where(eq(allowedChats.chatId, input.chatId))
           .run()
+        invalidateAllowedChatsCache()
         if (!input.allowed && existing.msSubscriptionId) {
           const client = createGraphClient({ accessToken })
           try {
@@ -124,6 +126,7 @@ export const chatVisibilityRouter = {
             canRespond: input.canRespond,
           })
           .run()
+        invalidateAllowedChatsCache()
         if (input.allowed) {
           const result = await createMsSubscription(input.chatId, accessToken)
           subscriptionStatus = result.success ? 'active' : 'none'
@@ -154,6 +157,7 @@ export const chatVisibilityRouter = {
         .set({ canRespond: input.canRespond })
         .where(eq(allowedChats.chatId, input.chatId))
         .run()
+      invalidateAllowedChatsCache()
 
       const publisher = getEventPublisher()
       publisher.publish('chat:*', {

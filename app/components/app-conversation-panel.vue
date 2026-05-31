@@ -25,7 +25,7 @@ const messagesLoading = ref(false)
 const messagesError = ref<string | null>(null)
 const nextCursor = ref<string | undefined>(undefined)
 const loadingMore = ref(false)
-const msUserId = ref<string | null>(null)
+const { msUserId, ensure: ensureMsUser } = useMsUser()
 const pendingSends = new Set<string>()
 const pinnedMessageIds = ref<string[]>([])
 
@@ -44,6 +44,7 @@ const sortedMessages = computed(() =>
 async function loadMessages() {
   if (!props.chat) return
   const chatId = props.chat.id!
+  ensureMsUser()
   messages.value = []
   messagesError.value = null
   messagesLoading.value = true
@@ -78,15 +79,6 @@ async function loadMore() {
     loadingMore.value = false
   }
 }
-
-async function fetchMsUserId() {
-  try {
-    const me = await $orpc.chats.getMe()
-    msUserId.value = me.id
-  } catch { /* non-critical */ }
-}
-
-onMounted(fetchMsUserId)
 
 watch(
   () => props.chat?.id,

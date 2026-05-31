@@ -21,7 +21,9 @@
     "main_pane_min_width": 120,
     "agent_pane_min_width": 40
   },
-  "experimental": {},
+  "experimental": {
+    "task_system": true
+  },
   "agents": {
     "sisyphus": {
       "model": "zai-coding-plan/glm-5.1",

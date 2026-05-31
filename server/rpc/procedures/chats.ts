@@ -7,6 +7,7 @@ import type { Chat as GraphChat, ChatMessage } from '../../ms-graph/types'
 import { getEventPublisher, messageEventSchema, visibilityEventSchema, respondEventSchema, disconnectEventSchema } from '../../utils/event-bus'
 import { getAllowedChats, getAllowedChat } from '../../utils/allowed-chats'
 import { prefetchMessageImages } from '../../utils/image-cache'
+import { getCachedMsUser, setCachedMsUser } from '../../utils/ms-user-cache'
 
 function createLiveHandler(schema: z.ZodTypeAny, type: string, label: string) {
   return authed.output(eventIterator(schema)).handler(async function* ({ signal, lastEventId }) {
@@ -27,6 +28,7 @@ export const chatsRouter = {
   getMe: authed.handler(async ({ context: { accessToken } }) => {
     const client = createGraphClient({ accessToken })
     const me = await client.getMe()
+    setCachedMsUser({ id: me.id, displayName: me.displayName })
     return { id: me.id, displayName: me.displayName }
   }),
 
@@ -49,7 +51,7 @@ export const chatsRouter = {
         const requests = chunk.map((id, i) => ({
           id: String(i),
           method: 'GET',
-          url: `/chats/${id}?$expand=members,lastMessagePreview`,
+          url: `/chats/${id}?$select=id,topic,chatType,lastUpdatedDateTime,createdDateTime,members,lastMessagePreview&$expand=members,lastMessagePreview`,
         }))
         return client.batch(requests)
       }),
@@ -77,6 +79,11 @@ export const chatsRouter = {
       }),
     )
     .handler(async ({ input, context: { accessToken } }) => {
+      const chatAccess = getAllowedChat(input.chatId)
+      if (!chatAccess || !chatAccess.allowed) {
+        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to access this chat' })
+      }
+
       const client = createGraphClient({ accessToken })
       let messages: ChatMessage[]
       let nextLink: string | undefined
@@ -202,7 +209,12 @@ export const chatsRouter = {
         throw new ORPCError('FORBIDDEN', { message: 'Not allowed to delete messages in this chat' })
       }
       const client = createGraphClient({ accessToken })
-      const me = await client.getMe()
+      let me = getCachedMsUser()
+      if (!me) {
+        const graphMe = await client.getMe()
+        me = { id: graphMe.id, displayName: graphMe.displayName }
+        setCachedMsUser(me)
+      }
       await client.chats.softDeleteMessage(me.id, input.chatId, input.messageId)
     }),
 

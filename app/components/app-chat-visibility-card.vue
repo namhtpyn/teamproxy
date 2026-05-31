@@ -12,7 +12,7 @@ const PAGE_SIZE = 10
 
 const togglingId = ref<string | null>(null)
 const allowedTogglingId = ref<string | null>(null)
-const msUserId = ref<string | null>(null)
+const { msUserId, ensure: ensureMsUser } = useMsUser()
 const currentCursor = ref<string | undefined>(undefined)
 const nextCursor = ref<string | undefined>(undefined)
 const pageCursors = ref<(string | undefined)[]>([undefined])
@@ -21,12 +21,11 @@ const search = ref('')
 
 const { state: chats, isLoading: loading, error, execute: fetchPage } = useAsyncState(
   async () => {
-    const [result, me] = await Promise.all([
+    const [result] = await Promise.all([
       $orpc.chatVisibility.getVisibility({ limit: PAGE_SIZE, cursor: currentCursor.value }),
-      $orpc.chats.getMe().catch(() => null),
+      ensureMsUser(),
     ])
     nextCursor.value = result.nextCursor
-    msUserId.value = me?.id ?? null
     return result.chats
   },
   [] as VisibilityChat[],

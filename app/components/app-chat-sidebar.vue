@@ -13,15 +13,14 @@ const props = defineProps<{
   selectedChatId?: string | null
 }>()
 
-const msUserId = ref<string | null>(null)
+const { msUserId, ensure: ensureMsUser } = useMsUser()
 
 const { state: chats, isLoading: chatsLoading, error: chatsError, execute: fetchChats } = useAsyncState(
   async () => {
-    const [chatList, me] = await Promise.all([
+    const [chatList] = await Promise.all([
       $orpc.chats.list().then(r => r.chats),
-      $orpc.chats.getMe().catch(() => null),
+      ensureMsUser(),
     ])
-    msUserId.value = me?.id ?? null
     return chatList
   },
   [] as Chat[],

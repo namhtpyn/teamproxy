@@ -3,6 +3,7 @@ import { consola } from 'consola'
 import { db } from '../../db/client'
 import { getActiveToken } from '../../db/get-active-token'
 import { createGraphClient } from '../../ms-graph/graph-client'
+import type { ChatMessage } from '../../ms-graph/types'
 import { liveEventSchema, getEventPublisher } from '../../utils/event-bus'
 import { prefetchMessageImages } from '../../utils/image-cache'
 import { getMsSubscriptionsByClientStates, updateLastMessageAt } from '../../utils/ms-subscription-store'
@@ -72,52 +73,88 @@ export default defineEventHandler(async (event) => {
 
     const publisher = getEventPublisher()
 
-    for (const notification of rawNotifications) {
-      if (typeof notification?.resource !== 'string' || typeof notification?.clientState !== 'string') {
-        continue
+    // Collect valid notifications with extracted chatId for batch processing
+    const validNotifications = rawNotifications
+      .map((notification: Record<string, unknown>) => {
+        if (typeof notification?.resource !== 'string' || typeof notification?.clientState !== 'string') return null
+        if (!subMap.get(notification.clientState)) return null
+        const chatId = extractChatId(notification.resource)
+        if (!chatId) return null
+        return { notification, chatId }
+      })
+      .filter((item: { notification: Record<string, unknown>; chatId: string } | null): item is { notification: Record<string, unknown>; chatId: string } => item !== null)
+
+    if (token && validNotifications.length > 0) {
+      const client = createGraphClient({ accessToken: token.accessToken })
+
+      // Build batch requests (max 20 per batch)
+      const BATCH_LIMIT = 20
+      const chunks: Array<{ notification: Record<string, unknown>; chatId: string }[]> = []
+      for (let i = 0; i < validNotifications.length; i += BATCH_LIMIT) {
+        chunks.push(validNotifications.slice(i, i + BATCH_LIMIT))
       }
-      const sub = subMap.get(notification.clientState)
-      if (!sub) continue
 
-      const chatId = extractChatId(notification.resource)
-      if (!chatId) continue
+      const allBatchResults = await Promise.all(
+        chunks.map((chunk) => {
+          const requests = chunk.map((item, i) => ({
+            id: String(i),
+            method: 'GET',
+            url: resourceToPath(item.notification.resource as string),
+          }))
+          return client.batch(requests)
+        }),
+      )
 
-      if (token) {
-        try {
-          const client = createGraphClient({ accessToken: token.accessToken })
-          const message = await client.chats.getMessage(resourceToPath(notification.resource))
+      // Process each result
+      for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+        const chunk = chunks[chunkIdx]!
+        const batchResults = allBatchResults[chunkIdx]!
 
-          if (!message) continue
+        for (let i = 0; i < chunk.length; i++) {
+          const { notification, chatId } = chunk[i]!
+          const result = batchResults.find((r) => r.id === String(i))
 
-          if (message.eventDetail) {
-            consola.info(
-              `[eventDetail] type=${(message.eventDetail as Record<string, unknown>)['@odata.type'] ?? 'unknown'}`,
-              JSON.stringify(message.eventDetail),
-            )
+          if (!result || result.status !== 200 || !result.body) {
+            consola.error(`[webhook] Failed to fetch message for ${notification.resource}: status=${result?.status ?? 'no result'}`)
+            const errorPayload = { type: 'error' as const, data: { resource: notification.resource, fetchFailed: true }, chatId }
+            const errorParsed = liveEventSchema.safeParse(errorPayload)
+            if (errorParsed.success) publisher.publish('chat:*', errorParsed.data)
+            continue
           }
 
-          prefetchMessageImages(message.body?.content ?? undefined, token.accessToken)
+          try {
+            const message = result.body as ChatMessage
 
-          const eventType: 'message' | 'error' =
-            notification.changeType === 'deleted' ? 'error' : 'message'
-          const parsed = liveEventSchema.safeParse({ type: eventType, data: message, chatId })
-          if (parsed.success) {
-            publisher.publish('chat:*', parsed.data)
-            if (message.createdDateTime) {
-              updateLastMessageAt(chatId, new Date(message.createdDateTime))
+            if (message.eventDetail) {
+              consola.info(
+                `[eventDetail] type=${(message.eventDetail as Record<string, unknown>)['@odata.type'] ?? 'unknown'}`,
+                JSON.stringify(message.eventDetail),
+              )
             }
-          } else {
-            consola.warn(`[webhook] Event validation failed for ${notification.resource}:`, parsed.error)
-          }
-        } catch (err) {
-          consola.error(`[webhook] Failed to fetch message for ${notification.resource}:`, err)
-          const errorPayload = { type: 'error' as const, data: { resource: notification.resource, fetchFailed: true }, chatId }
-          const errorParsed = liveEventSchema.safeParse(errorPayload)
-          if (errorParsed.success) {
-            publisher.publish('chat:*', errorParsed.data)
+
+            prefetchMessageImages(message.body?.content ?? undefined, token.accessToken)
+
+            const eventType: 'message' | 'error' =
+              notification.changeType === 'deleted' ? 'error' : 'message'
+            const parsed = liveEventSchema.safeParse({ type: eventType, data: message, chatId })
+            if (parsed.success) {
+              publisher.publish('chat:*', parsed.data)
+              if (message.createdDateTime) {
+                updateLastMessageAt(chatId, new Date(message.createdDateTime))
+              }
+            } else {
+              consola.warn(`[webhook] Event validation failed for ${notification.resource}:`, parsed.error)
+            }
+          } catch (err) {
+            consola.error(`[webhook] Error processing message for ${notification.resource}:`, err)
+            const errorPayload = { type: 'error' as const, data: { resource: notification.resource, fetchFailed: true }, chatId }
+            const errorParsed = liveEventSchema.safeParse(errorPayload)
+            if (errorParsed.success) publisher.publish('chat:*', errorParsed.data)
           }
         }
-      } else {
+      }
+    } else if (!token && validNotifications.length > 0) {
+      for (const { notification, chatId } of validNotifications) {
         const noTokenPayload = { type: 'error' as const, data: { resource: notification.resource, noToken: true }, chatId }
         const noTokenParsed = liveEventSchema.safeParse(noTokenPayload)
         if (noTokenParsed.success) {
