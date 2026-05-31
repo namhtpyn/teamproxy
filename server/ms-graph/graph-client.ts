@@ -1,4 +1,5 @@
 import { graphRequest, GraphAPIError, GRAPH_BASE } from './client'
+export { graphRequest } from './client'
 export { GraphAPIError } from './client'
 export { GraphAuthError } from './client'
 export { GRAPH_BASE } from './client'
@@ -40,11 +41,11 @@ function toQueryParams(params?: ODataQueryParams): Record<string, string> | unde
 
 export function createGraphClient({ accessToken }: GraphClientOptions) {
   return {
-    async getMe(): Promise<{ id: string; displayName: string }> {
-      const me = await graphRequest<{ id: string; displayName: string }>({
+    async getMe(): Promise<{ id: string; displayName: string; mail: string | null; userPrincipalName: string | null }> {
+      const me = await graphRequest<{ id: string; displayName: string; mail: string | null; userPrincipalName: string | null }>({
         method: 'GET',
         path: '/me',
-        query: { $select: 'id,displayName' },
+        query: { $select: 'id,displayName,mail,userPrincipalName' },
         accessToken,
       })
       if (!me) throw new GraphAPIError(500, 'no_response', 'Empty response fetching user profile')
@@ -60,14 +61,14 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
         })
         return data?.value ?? []
       },
-      async messages(chatId: string, params?: ODataQueryParams): Promise<ChatMessage[]> {
-        const data = await graphRequest<{ value: ChatMessage[] }>({
+      async messages(chatId: string, params?: ODataQueryParams): Promise<{ value: ChatMessage[]; nextLink?: string }> {
+        const data = await graphRequest<{ value: ChatMessage[]; '@odata.nextLink'?: string }>({
           method: 'GET',
           path: `/chats/${chatId}/messages`,
           query: toQueryParams(params),
           accessToken,
         })
-        return data?.value ?? []
+        return { value: data?.value ?? [], nextLink: data?.['@odata.nextLink'] }
       },
       send(chatId: string, body: { contentType: string; content: string }, replyToId?: string, mentions?: Array<{
         id: number

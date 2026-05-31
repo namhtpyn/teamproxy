@@ -11,11 +11,12 @@ export async function backfillMissedMessages(
   const client = createGraphClient({ accessToken })
   const publisher = getEventPublisher()
 
-  const messages = await client.chats.messages(chatId, {
+  const result = await client.chats.messages(chatId, {
     $filter: `lastModifiedDateTime gt ${since.toISOString()}`,
     $orderby: 'lastModifiedDateTime asc',
     $top: 50,
   })
+  const messages = result.value
 
   if (messages.length === 0) {
     consola.info(`[backfill] No missed messages for chat ${chatId}`)

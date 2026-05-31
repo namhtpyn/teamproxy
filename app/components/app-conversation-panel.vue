@@ -23,7 +23,7 @@ type MessageItem = ChatMessage | OptimisticChatMessage
 const messages = ref<MessageItem[]>([])
 const messagesLoading = ref(false)
 const messagesError = ref<string | null>(null)
-const hasMore = ref(false)
+const nextCursor = ref<string | undefined>(undefined)
 const loadingMore = ref(false)
 const msUserId = ref<string | null>(null)
 const pendingSends = new Set<string>()
@@ -47,14 +47,14 @@ async function loadMessages() {
   messages.value = []
   messagesError.value = null
   messagesLoading.value = true
-  hasMore.value = false
+  nextCursor.value = undefined
   loadingMore.value = false
 
   try {
     const result = await $orpc.chats.getMessages({ chatId })
     if (props.chat?.id !== chatId) return
     messages.value = result.messages
-    hasMore.value = result.hasMore
+    nextCursor.value = result.nextCursor
   } catch (err: unknown) {
     messagesError.value = getErrorMessage(err, 'Failed to load messages')
     messages.value = []
@@ -65,15 +65,13 @@ async function loadMessages() {
 }
 
 async function loadMore() {
-  if (!props.chat || loadingMore.value || !hasMore.value) return
+  if (!props.chat || loadingMore.value || !nextCursor.value) return
   loadingMore.value = true
 
   try {
-    const oldest = sortedMessages.value[0]
-    const before = oldest?.createdDateTime ?? undefined
-    const result = await $orpc.chats.getMessages({ chatId: props.chat.id!, before })
+    const result = await $orpc.chats.getMessages({ chatId: props.chat.id!, nextLink: nextCursor.value })
     messages.value = [...result.messages, ...messages.value]
-    hasMore.value = result.hasMore
+    nextCursor.value = result.nextCursor
   } catch (err: unknown) {
     toast.add({ title: 'Failed to load more messages', description: err instanceof Error ? err.message : undefined, color: 'error' })
   } finally {

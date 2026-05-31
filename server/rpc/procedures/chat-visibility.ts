@@ -18,7 +18,6 @@ export const chatVisibilityRouter = {
   getVisibility: adminAuthed
     .input(
       z.object({
-        cursor: z.string().optional(),
         limit: z.number().int().min(1).max(100).default(20),
       }),
     )
@@ -26,20 +25,16 @@ export const chatVisibilityRouter = {
       const client = createGraphClient({ accessToken })
       const query: ODataQueryParams = {
         $expand: 'members',
-        $orderby: 'lastUpdatedDateTime desc',
         $top: input.limit + 1,
-      }
-      if (input.cursor) {
-        query.$filter = `lastUpdatedDateTime lt ${input.cursor}`
       }
 
       const allChats = await client.chats.list(query)
-      const hasMore = allChats.length > input.limit
-      const page = allChats.slice(0, input.limit)
-      const nextCursor =
-        hasMore && page.length > 0
-          ? (page[page.length - 1]!.lastUpdatedDateTime ?? undefined)
-          : undefined
+      const sorted = allChats
+        .filter((c) => c.lastUpdatedDateTime)
+        .sort((a, b) => new Date(b.lastUpdatedDateTime!).getTime() - new Date(a.lastUpdatedDateTime!).getTime())
+      const hasMore = sorted.length > input.limit
+      const page = sorted.slice(0, input.limit)
+      const nextCursor = undefined
 
       const rows = db.query.allowedChats.findMany().sync()
       const rowMap = new Map(rows.map((r) => [r.chatId, r]))

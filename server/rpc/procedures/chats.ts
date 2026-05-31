@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { ORPCError, eventIterator, getEventMeta, withEventMeta } from '@orpc/server'
 import { consola } from 'consola'
 import { authed } from '../middleware/auth'
-import { createGraphClient, type ODataQueryParams } from '../../ms-graph/graph-client'
+import { createGraphClient, graphRequest, type ODataQueryParams } from '../../ms-graph/graph-client'
 import type { ChatMessage } from '../../ms-graph/types'
 import { getEventPublisher, messageEventSchema, visibilityEventSchema, respondEventSchema, disconnectEventSchema } from '../../utils/event-bus'
 import { getAllowedChats, getAllowedChat } from '../../utils/allowed-chats'
@@ -56,25 +56,39 @@ export const chatsRouter = {
       z.object({
         chatId: z.string(),
         top: z.number().min(1).max(50).default(20),
-        before: z.string().datetime({ offset: true }).optional(),
+        nextLink: z.string().url().optional(),
       }),
     )
     .handler(async ({ input, context: { accessToken } }) => {
       const client = createGraphClient({ accessToken })
-      const query: ODataQueryParams = {
-        $top: input.top + 1,
-        $orderby: 'createdDateTime desc',
+      let messages: ChatMessage[]
+      let nextLink: string | undefined
+
+      if (input.nextLink) {
+        const path = input.nextLink.replace('https://graph.microsoft.com/v1.0', '')
+        const data = await graphRequest<{ value: ChatMessage[]; '@odata.nextLink'?: string }>({
+          method: 'GET',
+          path,
+          accessToken,
+        })
+        messages = data?.value ?? []
+        nextLink = data?.['@odata.nextLink']
+      } else {
+        const query: ODataQueryParams = {
+          $top: input.top,
+          $orderby: 'createdDateTime desc',
+        }
+        const result = await client.chats.messages(input.chatId, query)
+        messages = result.value
+        nextLink = result.nextLink
       }
-      if (input.before) {
-        query.$filter = `createdDateTime lt ${input.before}`
-      }
-      const results = await client.chats.messages(input.chatId, query)
-      for (const msg of results) {
+
+      for (const msg of messages) {
         prefetchMessageImages(msg.body?.content ?? undefined, accessToken)
       }
       return {
-        messages: results.slice(0, input.top),
-        hasMore: results.length >= input.top,
+        messages,
+        nextCursor: nextLink ?? undefined,
       }
     }),
 

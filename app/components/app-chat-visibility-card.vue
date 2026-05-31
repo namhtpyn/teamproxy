@@ -8,40 +8,20 @@ const { $orpcClient: $orpc } = useNuxtApp()
 const toast = useToast()
 
 const PAGE_SIZE = 10
-const currentPage = ref(1)
-const cursors = ref<(string | undefined)[]>([undefined])
 
 const togglingId = ref<string | null>(null)
 const allowedTogglingId = ref<string | null>(null)
-const hasNextPage = ref(false)
 
 const { state: chats, isLoading: loading, error, execute: fetchPage } = useAsyncState(
   async () => {
-    const cursor = cursors.value[currentPage.value - 1]
-    const result = await $orpc.chatVisibility.getVisibility({ cursor, limit: PAGE_SIZE })
-    hasNextPage.value = !!result.nextCursor
-    if (result.nextCursor && !cursors.value[currentPage.value]) {
-      cursors.value[currentPage.value] = result.nextCursor
-    }
+    const result = await $orpc.chatVisibility.getVisibility({ limit: PAGE_SIZE })
     return result.chats
   },
   [] as VisibilityChat[],
 )
 
-function goToPage(page: number) {
-  if (page < 1 || page > cursors.value.length) return
-  currentPage.value = page
+function refresh() {
   fetchPage()
-}
-
-function nextPage() {
-  if (!hasNextPage.value) return
-  goToPage(currentPage.value + 1)
-}
-
-function prevPage() {
-  if (currentPage.value <= 1) return
-  goToPage(currentPage.value - 1)
 }
 
 const allowedCount = computed(() => chats.value.filter((c) => c.allowed).length)
@@ -152,11 +132,11 @@ function chatTypeLabel(chatType: string): string {
               Allowed Chats
             </p>
             <p class="text-xs text-muted">
-              {{ allowedCount }} of {{ chats.length }} chats visible on this page
+              {{ allowedCount }} of {{ chats.length }} chats visible
             </p>
           </div>
         </div>
-        <UButton variant="ghost" size="xs" aria-label="Refresh" :loading="loading" @click="fetchPage()">
+        <UButton variant="ghost" size="xs" aria-label="Refresh" :loading="loading" @click="refresh()">
           <UIcon name="i-lucide-refresh-cw" class="h-3 w-3" />
         </UButton>
       </div>
@@ -226,30 +206,6 @@ function chatTypeLabel(chatType: string): string {
             />
           </template>
         </UTable>
-
-        <div class="mt-3 flex items-center justify-between gap-4">
-          <p class="text-xs text-dimmed">
-            Page {{ currentPage }}
-          </p>
-          <div class="flex items-center gap-2">
-            <UButton
-              variant="outline"
-              size="xs"
-              icon="i-lucide-chevron-left"
-              :disabled="currentPage <= 1 || loading"
-              aria-label="Previous page"
-              @click="prevPage()"
-            />
-            <UButton
-              variant="outline"
-              size="xs"
-              icon="i-lucide-chevron-right"
-              :disabled="!hasNextPage || loading"
-              aria-label="Next page"
-              @click="nextPage()"
-            />
-          </div>
-        </div>
       </template>
     </UCard>
   </section>
