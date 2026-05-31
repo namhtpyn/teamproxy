@@ -3,7 +3,7 @@ import { ORPCError, eventIterator, getEventMeta, withEventMeta } from '@orpc/ser
 import { consola } from 'consola'
 import { authed } from '../middleware/auth'
 import { createGraphClient, graphRequest, type ODataQueryParams } from '../../ms-graph/graph-client'
-import type { ChatMessage } from '../../ms-graph/types'
+import type { Chat as GraphChat, ChatMessage } from '../../ms-graph/types'
 import { getEventPublisher, messageEventSchema, visibilityEventSchema, respondEventSchema, disconnectEventSchema } from '../../utils/event-bus'
 import { getAllowedChats, getAllowedChat } from '../../utils/allowed-chats'
 import { prefetchMessageImages } from '../../utils/image-cache'
@@ -35,16 +35,33 @@ export const chatsRouter = {
     if (allowed.length === 0) return { chats: [] }
 
     const allowedMap = new Map(allowed.map((r) => [r.chatId, r]))
-    const filter = allowed.map((r) => `'${r.chatId}'`).join(',')
     const client = createGraphClient({ accessToken })
-    const { value: results } = await client.chats.list({
-      $expand: 'members,lastMessagePreview',
-      $orderby: 'lastMessagePreview/createdDateTime desc',
-      $filter: `id in (${filter})`,
-    })
+
+    const BATCH_SIZE = 20
+    const chatIds = allowed.map((r) => r.chatId)
+    const chunks: string[][] = []
+    for (let i = 0; i < chatIds.length; i += BATCH_SIZE) {
+      chunks.push(chatIds.slice(i, i + BATCH_SIZE))
+    }
+
+    const batchResults = await Promise.all(
+      chunks.map((chunk) => {
+        const requests = chunk.map((id, i) => ({
+          id: String(i),
+          method: 'GET',
+          url: `/chats/${id}?$expand=members,lastMessagePreview`,
+        }))
+        return client.batch(requests)
+      }),
+    )
+
+    const chats = batchResults
+      .flat()
+      .filter((r) => r.status === 200 && r.body)
+      .map((r) => r.body as GraphChat)
 
     return {
-      chats: results.map((chat) => ({
+      chats: chats.map((chat) => ({
         ...chat,
         canRespond: allowedMap.get(chat.id!)?.canRespond ?? false,
       })),

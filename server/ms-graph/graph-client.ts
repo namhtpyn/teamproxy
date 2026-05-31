@@ -39,8 +39,24 @@ function toQueryParams(params?: ODataQueryParams): Record<string, string> | unde
   return result
 }
 
+export interface BatchResponseItem {
+  id: string
+  status: number
+  body?: unknown
+}
+
 export function createGraphClient({ accessToken }: GraphClientOptions) {
   return {
+    async batch(requests: Array<{ id: string; method: string; url: string }>): Promise<BatchResponseItem[]> {
+      const data = await graphRequest<{ responses: BatchResponseItem[] }>({
+        method: 'POST',
+        path: '/$batch',
+        body: { requests },
+        accessToken,
+      })
+      return data?.responses ?? []
+    },
+
     async getMe(): Promise<{ id: string; displayName: string; mail: string | null; userPrincipalName: string | null }> {
       const me = await graphRequest<{ id: string; displayName: string; mail: string | null; userPrincipalName: string | null }>({
         method: 'GET',
