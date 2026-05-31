@@ -1,9 +1,8 @@
 import { defineEventHandler, getQuery, createError } from 'h3'
-import { eq, and, lt } from 'drizzle-orm'
+import { eq, lt } from 'drizzle-orm'
 import { db } from '../../db/client'
 import { oauthTokens } from '../../db/schema'
 import { exchangeToken } from '../../ms-graph/token-exchange'
-import { encrypt } from '../../utils/crypto'
 import { ensureMsSubscriptions } from '../../utils/ensure-ms-subscriptions'
 
 export default defineEventHandler(async (event) => {
@@ -39,8 +38,8 @@ export default defineEventHandler(async (event) => {
   const now = new Date()
 
   db.insert(oauthTokens).values({
-    accessToken: encrypt(data.access_token),
-    refreshToken: data.refresh_token ? encrypt(data.refresh_token) : null,
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token ?? null,
     tokenType: data.token_type,
     scope: data.scope,
     expiresAt: new Date(Date.now() + data.expires_in * 1000),
@@ -48,12 +47,8 @@ export default defineEventHandler(async (event) => {
     updatedAt: now,
   }).run()
 
-  db.update(oauthTokens)
-    .set({ isActive: false })
-    .where(and(
-      eq(oauthTokens.isActive, true),
-      lt(oauthTokens.updatedAt, now),
-    ))
+  db.delete(oauthTokens)
+    .where(lt(oauthTokens.updatedAt, now))
     .run()
 
   ensureMsSubscriptions().catch(() => {})

@@ -2,7 +2,6 @@ import { eq } from 'drizzle-orm'
 import { consola } from 'consola'
 import { db } from '../db/client'
 import { oauthTokens } from '../db/schema'
-import { decrypt, encrypt } from '../utils/crypto'
 import { refreshAccessToken } from '../ms-graph/token-refresh'
 
 export default defineTask({
@@ -34,12 +33,12 @@ export default defineTask({
 
     for (const token of expiring) {
       try {
-        const result = await refreshAccessToken(decrypt(token.refreshToken!))
+        const result = await refreshAccessToken(token.refreshToken!)
 
         db.update(oauthTokens)
           .set({
-            accessToken: encrypt(result.accessToken),
-            refreshToken: encrypt(result.refreshToken),
+            accessToken: result.accessToken,
+            refreshToken: result.refreshToken,
             expiresAt: new Date(Date.now() + result.expiresIn * 1000),
             updatedAt: new Date(),
           })
@@ -49,7 +48,7 @@ export default defineTask({
         refreshed++
       } catch (err) {
         consola.error(`[refresh-tokens] Failed to refresh token ${token.id}:`, err)
-        db.update(oauthTokens).set({ isActive: false }).where(eq(oauthTokens.id, token.id)).run()
+        db.delete(oauthTokens).where(eq(oauthTokens.id, token.id)).run()
         failed++
       }
     }

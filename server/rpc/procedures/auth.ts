@@ -8,7 +8,6 @@ import { oauthTokens } from '../../db/schema'
 import { MS_SCOPE_STRING } from '../../ms-graph/scopes'
 import { getActiveToken } from '../../db/get-active-token'
 import { createGraphClient } from '../../ms-graph/graph-client'
-import { encrypt } from '../../utils/crypto'
 import { disconnectAllSubscriptions } from '../../utils/disconnect-all-subscriptions'
 import { getEventPublisher } from '../../utils/event-bus'
 
@@ -69,7 +68,7 @@ export const authRouter = {
       data: { reason: 'Teams connection disconnected by admin' },
     })
 
-    db.update(oauthTokens).set({ isActive: false }).where(eq(oauthTokens.isActive, true)).run()
+    db.delete(oauthTokens).run()
 
     return { success: true }
   }),
@@ -140,17 +139,11 @@ export const authRouter = {
 
       const expiresAt = new Date(decoded.expiresAt as string)
 
-      const existing = db.query.oauthTokens.findFirst({
-        where: { isActive: true },
-      }).sync()
-
-      if (existing) {
-        db.update(oauthTokens).set({ isActive: false }).where(eq(oauthTokens.isActive, true)).run()
-      }
+      db.delete(oauthTokens).run()
 
       db.insert(oauthTokens).values({
-        accessToken: encrypt(decoded.accessToken as string),
-        refreshToken: decoded.refreshToken ? encrypt(decoded.refreshToken as string) : null,
+        accessToken: decoded.accessToken as string,
+        refreshToken: decoded.refreshToken ? decoded.refreshToken as string : null,
         tokenType: decoded.tokenType as string,
         scope: decoded.scope as string,
         expiresAt,

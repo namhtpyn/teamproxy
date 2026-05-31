@@ -188,14 +188,13 @@ async function disconnectMicrosoft() {
         <h3 class="text-lg font-semibold">Export Session</h3>
       </template>
       <template #body>
-        <div class="-mx-4 -my-1.5 px-4 sm:-mx-6 sm:px-6">
-          <UTextarea
-            :model-value="exportData"
-            readonly
-            :rows="8"
-            class="font-mono text-xs"
-          />
-        </div>
+        <UTextarea
+          :model-value="exportData"
+          readonly
+          :rows="8"
+          class="font-mono text-xs"
+          :ui="{ root: 'relative flex items-center' }"
+        />
       </template>
       <template #footer>
         <div class="flex gap-2">
@@ -215,14 +214,13 @@ async function disconnectMicrosoft() {
         <h3 class="text-lg font-semibold">Import Session</h3>
       </template>
       <template #body>
-        <div class="-mx-4 -my-1.5 px-4 sm:-mx-6 sm:px-6">
-          <UTextarea
-            v-model="importData"
-            placeholder="Paste base64-encoded session data here..."
-            :rows="8"
-            class="font-mono text-xs"
-          />
-        </div>
+        <UTextarea
+          v-model="importData"
+          placeholder="Paste base64-encoded session data here..."
+          :rows="8"
+          class="font-mono text-xs"
+          :ui="{ root: 'relative flex items-center' }"
+        />
       </template>
       <template #footer>
         <div class="flex gap-2">
