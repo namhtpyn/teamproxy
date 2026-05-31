@@ -3,7 +3,6 @@ import { consola } from 'consola'
 import { db } from '../../db/client'
 import { getActiveToken } from '../../db/get-active-token'
 import { createGraphClient } from '../../ms-graph/graph-client'
-import type { ChatMessage } from '../../ms-graph/types'
 import { liveEventSchema, getEventPublisher } from '../../utils/event-bus'
 import { getMsSubscriptionsByClientStates, updateLastMessageAt } from '../../utils/ms-subscription-store'
 
@@ -85,7 +84,9 @@ export default defineEventHandler(async (event) => {
       if (token) {
         try {
           const client = createGraphClient({ accessToken: token.accessToken })
-          const message = await client.chats.getMessage(resourceToPath(notification.resource)) as ChatMessage
+          const message = await client.chats.getMessage(resourceToPath(notification.resource))
+
+          if (!message) continue
 
           if (message.eventDetail) {
             consola.info(

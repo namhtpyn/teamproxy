@@ -4,6 +4,7 @@ import { useTimeAgo } from '@vueuse/core'
 
 const props = defineProps<{
   chat: Chat
+  msUserId?: string | null
   selected: boolean
   isUnread: boolean
 }>()
@@ -12,10 +13,8 @@ const emit = defineEmits<{
   select: []
 }>()
 
-const { user } = useAuth()
-
-const displayName = computed(() => getChatDisplayName(props.chat, user.value?.id))
-const initial = computed(() => getChatInitial(props.chat, user.value?.id))
+const displayName = computed(() => getChatDisplayName(props.chat, props.msUserId))
+const initial = computed(() => getChatInitial(props.chat, props.msUserId))
 const chatType = computed(() => getChatType(props.chat))
 
 const timeAgo = useTimeAgo(

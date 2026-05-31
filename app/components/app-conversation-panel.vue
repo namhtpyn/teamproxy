@@ -250,10 +250,9 @@ async function handleReaction({ messageId, reactionType }: { messageId: string; 
     newReactions = filtered?.length ? filtered : undefined
   } else {
     // Adding new: remove previous reaction first (Graph replaces)
-    let filtered = prevReaction
+    const filtered = (prevReaction
       ? msg.reactions?.filter(r => r !== prevReaction)
-      : msg.reactions
-    if (!filtered) filtered = []
+      : msg.reactions) ?? []
     newReactions = [...filtered, {
       reactionType,
       user: { user: { id: msUserId.value! } },

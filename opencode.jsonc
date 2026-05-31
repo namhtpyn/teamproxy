@@ -6,4 +6,5 @@
   },
   "formatter": true,
   "lsp": true,
+  "plugin": ["oh-my-openagent@latest"],
 }

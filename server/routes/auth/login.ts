@@ -9,12 +9,6 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(Buffer.from(a), Buffer.from(b))
 }
 
-function verifyPassword(input: string, stored: string): boolean {
-  const inputBuf = Buffer.from(input)
-  const storedBuf = Buffer.from(stored)
-  return inputBuf.length === storedBuf.length && timingSafeEqual(inputBuf, storedBuf)
-}
-
 function parseCredentials(
   value: string | undefined,
 ): { username: string; password: string } | null {
@@ -47,11 +41,11 @@ export default defineEventHandler(async (event) => {
 
     let role: UserRole | null = null
 
-    if (admin && safeEqual(username ?? '', admin.username) && verifyPassword(password ?? '', admin.password)) {
+    if (admin && safeEqual(username ?? '', admin.username) && safeEqual(password ?? '', admin.password)) {
       role = 'admin'
     }
 
-    if (!role && user && safeEqual(username ?? '', user.username) && verifyPassword(password ?? '', user.password)) {
+    if (!role && user && safeEqual(username ?? '', user.username) && safeEqual(password ?? '', user.password)) {
       role = 'user'
     }
 

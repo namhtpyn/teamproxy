@@ -39,7 +39,10 @@ export function getMsSubscribedChats(): MsSubscribedChat[] {
     .where(and(eq(allowedChats.allowed, true), isNotNull(allowedChats.msSubscriptionId)))
     .all()
 
-  return rows.flatMap((r) => toMsSubscribedChat(r) ? [toMsSubscribedChat(r)!] : [])
+  return rows.flatMap((r) => {
+    const sub = toMsSubscribedChat(r)
+    return sub ? [sub] : []
+  })
 }
 
 export function getMsSubscriptionsByClientStates(

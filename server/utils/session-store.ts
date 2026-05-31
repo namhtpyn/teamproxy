@@ -17,7 +17,7 @@ export function resolveSession(
   const row = db.query.sessions.findFirst({
     where: { AND: [{ token }, { createdAt: { gte: threshold } }] },
   }).sync()
-  return row ? { username: row.username, role: row.role as UserRole } : undefined
+  return row ? { username: row.username, role: row.role } : undefined
 }
 
 export function deleteSession(token: string): void {

@@ -8,6 +8,21 @@ import type { ChatMessage } from '../../ms-graph/types'
 import { getEventPublisher, messageEventSchema, visibilityEventSchema, respondEventSchema, disconnectEventSchema } from '../../utils/event-bus'
 import { getAllowedChats, getAllowedChat } from '../../utils/allowed-chats'
 
+function createLiveHandler(schema: z.ZodTypeAny, type: string, label: string) {
+  return authed.output(eventIterator(schema)).handler(async function* ({ signal, lastEventId }) {
+    const publisher = getEventPublisher()
+    try {
+      for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {
+        if (payload.type !== type) continue
+        const meta = getEventMeta(payload)
+        yield meta ? withEventMeta(payload, meta) : payload
+      }
+    } finally {
+      consola.info(`[${label}] SSE stream closed`)
+    }
+  })
+}
+
 export const chatsRouter = {
   getMe: authed.handler(async ({ context: { accessToken } }) => {
     const client = createGraphClient({ accessToken })
@@ -108,7 +123,7 @@ export const chatsRouter = {
         : undefined
 
       let content = input.content
-      let contentType: string = 'html'
+      let contentType = 'html'
       const hasMentions = mentions && mentions.length > 0
       const hasHostedContents = !!input.hostedContents?.length
 
@@ -275,51 +290,9 @@ export const chatsRouter = {
     }
   }),
 
-  liveVisibility: authed.output(eventIterator(visibilityEventSchema)).handler(async function* ({
-    signal,
-    lastEventId,
-  }) {
-    const publisher = getEventPublisher()
-    try {
-      for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {
-        if (payload.type !== 'visibility') continue
-        const meta = getEventMeta(payload)
-        yield meta ? withEventMeta(payload, meta) : payload
-      }
-    } finally {
-      consola.info('[liveVisibility] SSE stream closed')
-    }
-  }),
+  liveVisibility: createLiveHandler(visibilityEventSchema, 'visibility', 'liveVisibility'),
 
-  liveRespond: authed.output(eventIterator(respondEventSchema)).handler(async function* ({
-    signal,
-    lastEventId,
-  }) {
-    const publisher = getEventPublisher()
-    try {
-      for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {
-        if (payload.type !== 'respond') continue
-        const meta = getEventMeta(payload)
-        yield meta ? withEventMeta(payload, meta) : payload
-      }
-    } finally {
-      consola.info('[liveRespond] SSE stream closed')
-    }
-  }),
+  liveRespond: createLiveHandler(respondEventSchema, 'respond', 'liveRespond'),
 
-  liveDisconnect: authed.output(eventIterator(disconnectEventSchema)).handler(async function* ({
-    signal,
-    lastEventId,
-  }) {
-    const publisher = getEventPublisher()
-    try {
-      for await (const payload of publisher.subscribe('chat:*', { signal, lastEventId })) {
-        if (payload.type !== 'disconnect') continue
-        const meta = getEventMeta(payload)
-        yield meta ? withEventMeta(payload, meta) : payload
-      }
-    } finally {
-      consola.info('[liveDisconnect] SSE stream closed')
-    }
-  }),
+  liveDisconnect: createLiveHandler(disconnectEventSchema, 'disconnect', 'liveDisconnect'),
 }

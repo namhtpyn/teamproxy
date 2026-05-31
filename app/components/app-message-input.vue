@@ -71,10 +71,6 @@ function sendMessage() {
 
   editorContent.value = ''
 
-  const hasImages = images.length > 0
-  const hasMentions = mentions.length > 0
-  const content = html
-
   const hostedContents = images.map((img, i) => {
     const imgMatch = img.dataUrl.match(/^data:(image\/\w+);base64,(.+)$/)
     if (!imgMatch) return null
@@ -86,9 +82,9 @@ function sendMessage() {
   }).filter((hc): hc is NonNullable<typeof hc> => hc !== null)
 
   emit('submit', {
-    content,
+    content: html,
     image: null,
-    mentions: hasMentions ? mentions : undefined,
+    mentions: mentions.length > 0 ? mentions : undefined,
     replyToId: props.replyingTo?.id?.startsWith('temp:') ? undefined : props.replyingTo?.id,
     hostedContents: hostedContents.length > 0 ? hostedContents : undefined,
   })

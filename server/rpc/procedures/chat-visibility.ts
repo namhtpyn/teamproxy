@@ -1,10 +1,10 @@
 import { z } from 'zod'
 import { consola } from 'consola'
 import { ORPCError } from '@orpc/server'
-import { CHAT_TYPES, MS_SUBSCRIPTION_STATUSES } from '#shared/utils/enums'
+import { CHAT_TYPES } from '#shared/utils/enums'
+import type { SubscriptionStatus } from '#shared/utils/enums'
 import { adminAuthed } from '../middleware/auth'
 import { createGraphClient, type ODataQueryParams } from '../../ms-graph/graph-client'
-import type { Chat } from '../../ms-graph/types'
 import { clearMsSubscription } from '../../utils/ms-subscription-store'
 import { getMsSubscriptionStatus } from '../../utils/ms-subscription-status'
 import { getEventPublisher } from '../../utils/event-bus'
@@ -24,18 +24,17 @@ export const chatVisibilityRouter = {
     )
     .handler(async ({ input, context: { accessToken } }) => {
       const client = createGraphClient({ accessToken })
-      const limit = input.limit
       const query: ODataQueryParams = {
         $expand: 'members',
-        $top: limit + 1,
+        $top: input.limit + 1,
       }
       if (input.cursor) {
         query.$filter = `createdDateTime lt ${input.cursor}`
       }
 
       const allChats = await client.chats.list(query)
-      const hasMore = allChats.length > limit
-      const page = allChats.slice(0, limit)
+      const hasMore = allChats.length > input.limit
+      const page = allChats.slice(0, input.limit)
       const nextCursor =
         hasMore && page.length > 0
           ? (page[page.length - 1]!.createdDateTime ?? undefined)
@@ -71,7 +70,7 @@ export const chatVisibilityRouter = {
     .handler(async ({ input, context: { accessToken } }) => {
       const existing = getAllowedChat(input.chatId)
 
-      let subscriptionStatus: 'active' | 'expired' | 'none' = 'none'
+      let subscriptionStatus: SubscriptionStatus = 'none'
       let subscriptionError: string | undefined
 
       if (existing) {

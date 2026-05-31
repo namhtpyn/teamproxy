@@ -1,5 +1,5 @@
 import type { ChatMessage, ChatMessageInfo, ChatMessageReaction, ConversationMember } from '@microsoft/microsoft-graph-types'
-import type { MessageType } from '#shared/utils/enums'
+import type { ChatType, MessageType } from '#shared/utils/enums'
 import type { Chat, ChatMember, LastMessagePreview } from '~/types/chat'
 
 export function getMessageContent(msg: ChatMessage): string {
@@ -34,8 +34,8 @@ export function getChatTopic(chat: Chat): string | null {
   return chat.topic ?? null
 }
 
-export function getChatType(chat: Chat): string {
-  return chat.chatType ?? 'unknownFutureValue'
+export function getChatType(chat: Chat): ChatType {
+  return (chat.chatType ?? 'unknownFutureValue') as ChatType
 }
 
 export function getLastMessagePreview(chat: Chat): LastMessagePreview | null {

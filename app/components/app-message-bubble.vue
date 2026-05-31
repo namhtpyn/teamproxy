@@ -68,7 +68,7 @@ function cancelEdit() {
 }
 
 const replyReference = computed(() => {
-  const attachments = (props.msg as ChatMessage).attachments
+  const attachments = props.msg.attachments
   if (!attachments || attachments.length === 0) return null
   const msgRef = attachments.find(a => a.contentType === 'messageReference')
   if (!msgRef) return null
@@ -131,9 +131,7 @@ const reactionGroups = computed(() => groupReactions(props.msg.reactions ?? unde
 const showReactionPicker = ref(false)
 const canReact = computed(() => !isSystemEvent.value && !isSending.value && !props.msg.id?.startsWith('temp:'))
 
-const isPinned = computed(() => props.pinned)
-
-const contextItems = computed<ContextMenuItem[][]>(() => {
+const contextItems = computed(() => {
   const items: ContextMenuItem[][] = []
 
   const actions: ContextMenuItem[] = [
@@ -147,7 +145,7 @@ const contextItems = computed<ContextMenuItem[][]>(() => {
   ])
 
   items.push([
-    isPinned.value
+    props.pinned
       ? { label: 'Unpin', icon: 'i-lucide-pin-off', onSelect: () => emit('unpin', props.msg.id!) }
       : { label: 'Pin', icon: 'i-lucide-pin', onSelect: () => emit('pin', props.msg.id!) },
   ])

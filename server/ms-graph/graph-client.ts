@@ -2,7 +2,7 @@ import { graphRequest, GraphAPIError, GRAPH_BASE } from './client'
 export { GraphAPIError } from './client'
 export { GraphAuthError } from './client'
 export { GRAPH_BASE } from './client'
-import type { Chat, ChatMessage, Channel, Team, Subscription } from './types'
+import type { Chat, ChatMessage, Subscription } from './types'
 
 export interface GraphClientOptions {
   accessToken: string
@@ -106,7 +106,7 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
           accessToken,
         })
       },
-      getMessage(resource: string): Promise<unknown> {
+      getMessage(resource: string): Promise<ChatMessage | undefined> {
         let apiPath: string
         if (resource.startsWith('/')) {
           apiPath = resource.replace(/^\/v1\.0/, '')
@@ -114,7 +114,7 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
           const url = new URL(resource)
           apiPath = url.pathname.replace(/^\/v1\.0/, '')
         }
-        return graphRequest<unknown>({
+        return graphRequest<ChatMessage>({
           method: 'GET',
           path: apiPath,
           accessToken,
@@ -167,38 +167,6 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
           path: `/chats/${chatId}/pinnedMessages/${messageId}`,
           accessToken,
         })
-      },
-    },
-    teams: {
-      async list(): Promise<Team[]> {
-        const data = await graphRequest<{ value: Team[] }>({
-          method: 'GET',
-          path: '/me/joinedTeams',
-          accessToken,
-        })
-        return data?.value ?? []
-      },
-      channels: {
-        async list(teamId: string, params?: ODataQueryParams): Promise<Channel[]> {
-          const data = await graphRequest<{ value: Channel[] }>({
-            method: 'GET',
-            path: `/teams/${teamId}/channels`,
-            query: toQueryParams(params),
-            accessToken,
-          })
-          return data?.value ?? []
-        },
-        messages: {
-          async list(teamId: string, channelId: string, params?: ODataQueryParams): Promise<ChatMessage[]> {
-            const data = await graphRequest<{ value: ChatMessage[] }>({
-              method: 'GET',
-              path: `/teams/${teamId}/channels/${channelId}/messages`,
-              query: toQueryParams(params),
-              accessToken,
-            })
-            return data?.value ?? []
-          },
-        },
       },
     },
     subscriptions: {

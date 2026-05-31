@@ -13,8 +13,17 @@ const props = defineProps<{
   selectedChatId?: string | null
 }>()
 
+const msUserId = ref<string | null>(null)
+
 const { state: chats, isLoading: chatsLoading, error: chatsError, execute: fetchChats } = useAsyncState(
-  () => $orpc.chats.list().then(r => r.chats),
+  async () => {
+    const [chatList, me] = await Promise.all([
+      $orpc.chats.list().then(r => r.chats),
+      $orpc.chats.getMe().catch(() => null),
+    ])
+    msUserId.value = me?.id ?? null
+    return chatList
+  },
   [] as Chat[],
 )
 
@@ -74,6 +83,7 @@ defineExpose({ chats, fetchChats })
         v-for="item in sortedChats"
         :key="item.chat.id"
         :chat="item.chat"
+        :ms-user-id="msUserId"
         :selected="item.chat.id === props.selectedChatId"
         :is-unread="item.isUnread"
         @select="handleSelect(item.chat)"

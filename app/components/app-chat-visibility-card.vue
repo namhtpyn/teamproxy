@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
-import type { ChatType } from '#shared/utils/enums'
 import type { VisibilityChat, VisibilityChatRow } from '~/types/chat'
 import { useAsyncState } from '@vueuse/core'
 import { getChatMembers, getChatTopic, getChatType } from '~/utils/graph-helpers'
@@ -47,7 +46,7 @@ function prevPage() {
 
 const allowedCount = computed(() => chats.value.filter((c) => c.allowed).length)
 
-const tableData = computed<VisibilityChatRow[]>(() =>
+const tableData = computed(() =>
   chats.value.map((chat) => ({
     ...chat,
     name: chatDisplayName(chat),
@@ -79,7 +78,7 @@ async function toggleChat(chat: VisibilityChat) {
       allowed: newValue,
       canRespond: newValue ? previousCanRespond : false,
       topic: chat.topic ?? '',
-      chatType: getChatType(chat) as ChatType,
+      chatType: getChatType(chat),
     })
     original.subscriptionStatus = result.subscriptionStatus
     if (result.subscriptionError) {

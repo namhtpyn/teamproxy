@@ -1,6 +1,5 @@
 import { consola } from 'consola'
 import { createGraphClient } from '../ms-graph/graph-client'
-import type { Subscription } from '../ms-graph/types'
 import { updateMsSubscription } from './ms-subscription-store'
 import { computeExpiration } from './compute-expiration'
 import { getWebhookOrigin } from './webhook-origin'
@@ -19,7 +18,7 @@ export async function createMsSubscription(
   const client = createGraphClient({ accessToken })
 
   try {
-    const result: Subscription = await client.subscriptions.create({
+    const result = await client.subscriptions.create({
       changeType: 'created',
       notificationUrl: `${origin}/webhook/graph`,
       resource: `/chats/${chatId}/messages`,

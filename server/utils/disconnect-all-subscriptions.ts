@@ -6,10 +6,10 @@ import { getMsSubscribedChats, clearMsSubscription } from './ms-subscription-sto
 
 export async function disconnectAllSubscriptions(): Promise<void> {
   const token = getActiveToken(db)
+  const subscribed = getMsSubscribedChats()
 
   if (token) {
     const client = createGraphClient({ accessToken: token.accessToken })
-    const subscribed = getMsSubscribedChats()
 
     await Promise.allSettled(
       subscribed.map(async (sub) => {
@@ -25,7 +25,6 @@ export async function disconnectAllSubscriptions(): Promise<void> {
     )
   }
 
-  const subscribed = getMsSubscribedChats()
   for (const sub of subscribed) {
     clearMsSubscription(sub.chatId)
   }

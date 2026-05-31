@@ -34,8 +34,7 @@ export default defineTask({
 
     for (const token of expiring) {
       try {
-        if (!token.refreshToken) continue
-        const result = await refreshAccessToken(decrypt(token.refreshToken))
+        const result = await refreshAccessToken(decrypt(token.refreshToken!))
 
         db.update(oauthTokens)
           .set({
