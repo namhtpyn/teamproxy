@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
-import type { OptimisticChatMessage } from '~/types/chat'
+import type { ChatMember, OptimisticChatMessage } from '~/types/chat'
 import { useScroll } from '@vueuse/core'
 
 const props = defineProps<{
@@ -9,6 +9,7 @@ const props = defineProps<{
   msUserId?: string | null
   editingMessageId?: string | null
   pinnedMessageIds?: string[]
+  members?: ChatMember[]
 }>()
 
 const emit = defineEmits<{
@@ -89,8 +90,9 @@ defineExpose({ scrollToBottom, isNearBottom })
            v-for="msg in messages"
            :key="msg.id"
            :msg="msg"
-           :ms-user-id="msUserId"
-           :editing="msg.id === editingMessageId"
+            :ms-user-id="msUserId"
+            :members="members"
+            :editing="msg.id === editingMessageId"
            :pinned="pinnedMessageIds?.includes(msg.id!) ?? false"
            @retry="emit('retry', msg.id!)"
            @react="emit('react', { messageId: msg.id!, reactionType: $event })"

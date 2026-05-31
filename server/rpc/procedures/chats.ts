@@ -2,11 +2,11 @@ import { z } from 'zod'
 import { ORPCError, eventIterator, getEventMeta, withEventMeta } from '@orpc/server'
 import { consola } from 'consola'
 import { authed } from '../middleware/auth'
-import { rateLimited } from '../middleware/rate-limit'
 import { createGraphClient, type ODataQueryParams } from '../../ms-graph/graph-client'
 import type { ChatMessage } from '../../ms-graph/types'
 import { getEventPublisher, messageEventSchema, visibilityEventSchema, respondEventSchema, disconnectEventSchema } from '../../utils/event-bus'
 import { getAllowedChats, getAllowedChat } from '../../utils/allowed-chats'
+import { prefetchMessageImages } from '../../utils/image-cache'
 
 function createLiveHandler(schema: z.ZodTypeAny, type: string, label: string) {
   return authed.output(eventIterator(schema)).handler(async function* ({ signal, lastEventId }) {
@@ -69,6 +69,9 @@ export const chatsRouter = {
         query.$filter = `createdDateTime lt ${input.before}`
       }
       const results = await client.chats.messages(input.chatId, query)
+      for (const msg of results) {
+        prefetchMessageImages(msg.body?.content ?? undefined, accessToken)
+      }
       return {
         messages: results.slice(0, input.top),
         hasMore: results.length >= input.top,
@@ -76,7 +79,6 @@ export const chatsRouter = {
     }),
 
   sendMessage: authed
-    .use(rateLimited)
     .input(
       z.object({
         chatId: z.string(),
@@ -157,7 +159,6 @@ export const chatsRouter = {
     }),
 
   deleteMessage: authed
-    .use(rateLimited)
     .input(
       z.object({
         chatId: z.string(),
@@ -175,7 +176,6 @@ export const chatsRouter = {
     }),
 
   editMessage: authed
-    .use(rateLimited)
     .input(
       z.object({
         chatId: z.string(),
@@ -190,13 +190,12 @@ export const chatsRouter = {
       }
       const client = createGraphClient({ accessToken })
       await client.chats.updateMessage(input.chatId, input.messageId, {
-        contentType: 'text',
+        contentType: 'html',
         content: input.content,
       })
     }),
 
   setReaction: authed
-    .use(rateLimited)
     .input(
       z.object({
         chatId: z.string(),
@@ -214,7 +213,6 @@ export const chatsRouter = {
     }),
 
   unsetReaction: authed
-    .use(rateLimited)
     .input(
       z.object({
         chatId: z.string(),
@@ -232,7 +230,6 @@ export const chatsRouter = {
     }),
 
   pinMessage: authed
-    .use(rateLimited)
     .input(
       z.object({
         chatId: z.string(),
@@ -249,7 +246,6 @@ export const chatsRouter = {
     }),
 
   unpinMessage: authed
-    .use(rateLimited)
     .input(
       z.object({
         chatId: z.string(),

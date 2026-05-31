@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { ContextMenuItem } from '@nuxt/ui'
-import type { OptimisticChatMessage } from '~/types/chat'
+import type { OptimisticChatMessage, ChatMember } from '~/types/chat'
 import DOMPurify from 'dompurify'
 import { getEventDetail, getMessageContent, getSender, groupReactions } from '~/utils/graph-helpers'
-import { onClickOutside, useClipboard } from '@vueuse/core'
+import { onClickOutside } from '@vueuse/core'
 
 const props = defineProps<{
   msg: ChatMessage | OptimisticChatMessage
   msUserId?: string | null
+  members?: ChatMember[]
   editing?: boolean
   pinned?: boolean
 }>()
@@ -41,26 +42,40 @@ const plainTextContent = computed(() => {
 })
 
 const editDraft = ref('')
+const editEditorRef = shallowRef<import('@tiptap/vue-3').Editor | null>(null)
+
 watch(() => props.editing, (isEditing) => {
-  if (isEditing) editDraft.value = plainTextContent.value
+  if (isEditing) {
+    editDraft.value = content.value
+      .replace(/(<img[^>]*\bsrc=["'])(https:\/\/graph\.microsoft\.com\/v1\.0\/)([^"']*)(["'][^>]*>)/gi,
+        (_, prefix, _baseUrl, apiPath, suffix) => `${prefix}/api/graph-image?path=${encodeURIComponent(apiPath)}${suffix}`)
+  }
 })
 
-function handleEditKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
+function handleEditKeydown(_view: unknown, event: KeyboardEvent): boolean {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
     saveEdit()
-  } else if (e.key === 'Escape') {
-    cancelEdit()
+    return true
   }
+  if (event.key === 'Escape') {
+    cancelEdit()
+    return true
+  }
+  return false
 }
 
 function saveEdit() {
-  const trimmed = editDraft.value.trim()
-  if (!trimmed || trimmed === plainTextContent.value) {
+  const editor = editEditorRef.value
+  const text = editor ? editor.getText().trim() : editDraft.value.replace(/<[^>]*>/g, '').trim()
+  if (!text) {
     cancelEdit()
     return
   }
-  emit('save-edit', { messageId: props.msg.id!, content: trimmed })
+  const html = editDraft.value
+    .replace(/(<img[^>]*\bsrc=["'])\/api\/graph-image\?path=([^"']*)(["'][^>]*>)/gi,
+      (_, prefix, encodedPath, suffix) => `${prefix}https://graph.microsoft.com/v1.0/${decodeURIComponent(encodedPath)}${suffix}`)
+  emit('save-edit', { messageId: props.msg.id!, content: html })
 }
 
 function cancelEdit() {
@@ -112,6 +127,17 @@ const renderedContent = computed(() => {
 const hasRenderedContent = computed(() => renderedContent.value.length > 0)
 
 const { open } = useLightbox()
+
+function handleImageError(event: Event) {
+  const img = event.target as HTMLImageElement
+  if (!img.classList.contains('inline-chat-img')) return
+  img.style.display = 'none'
+  const placeholder = document.createElement('div')
+  placeholder.className = 'inline-chat-img-placeholder'
+  placeholder.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--ui-bg-elevated);border:1px dashed var(--ui-border);border-radius:8px;color:var(--ui-text-muted);font-size:0.8rem;max-width:200px;'
+  placeholder.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg> Image expired'
+  img.parentNode?.insertBefore(placeholder, img)
+}
 
 function handleContentClick(e: MouseEvent) {
   const target = e.target as HTMLElement
@@ -188,6 +214,33 @@ onClickOutside(pickerRef, () => {
 })
 
 const messageTime = computed(() => formatMessageTime(props.msg.createdDateTime ?? ''))
+
+const editEditorUi = {
+  root: 'rounded-lg border border-default bg-elevated overflow-hidden',
+  content: 'relative min-h-[32px] max-h-[100px] overflow-y-auto',
+  base: 'w-full outline-none px-2.5 py-1.5 text-sm *:m-0 [&_p]:leading-5 [&_.mention]:text-primary [&_.mention]:font-medium [&_img]:max-h-[80px] [&_img]:rounded [&_img]:inline selection:bg-primary/20',
+}
+
+const editStarterKit = {
+  blockquote: false as const,
+  codeBlock: false as const,
+  heading: false as const,
+  bulletList: false as const,
+  orderedList: false as const,
+}
+
+const editEditorProps = {
+  handleKeyDown: handleEditKeydown,
+}
+
+const mentionAppendTo = () => document.body
+
+const mentionItems = computed(() =>
+  (props.members ?? [])
+    .filter((m): m is ChatMember & { userId: string } => m.userId != null && m.userId !== props.msUserId)
+    .map(m => ({ label: m.displayName, id: m.userId })),
+)
+
 </script>
 
 <template>
@@ -239,15 +292,19 @@ const messageTime = computed(() => formatMessageTime(props.msg.createdDateTime ?
               <p class="truncate text-[11px] text-dimmed">{{ replyReference.previewText }}</p>
             </div>
             <template v-if="editing">
-              <UTextarea
+              <UEditor
                 v-model="editDraft"
-                :rows="1"
-                :maxrows="3"
-                autoresize
-                autofocus
-                class="text-sm"
-                @keydown="handleEditKeydown"
-              />
+                content-type="html"
+                :starter-kit="editStarterKit"
+                :editor-props="editEditorProps"
+                :image="{ inline: true, allowBase64: true }"
+                :ui="editEditorUi"
+              >
+                <template #default="{ editor }">
+                  <Component :is="() => { editEditorRef = editor; return null }" />
+                  <UEditorMentionMenu :editor="editor" :items="mentionItems" :append-to="mentionAppendTo" />
+                </template>
+              </UEditor>
               <div class="mt-1.5 flex items-center justify-end gap-1">
                 <UButton
                   icon="i-lucide-check"
@@ -266,7 +323,7 @@ const messageTime = computed(() => formatMessageTime(props.msg.createdDateTime ?
               </div>
             </template>
             <p v-else-if="isDeleted" class="italic text-sm text-dimmed">This message has been deleted.</p>
-            <div v-else-if="hasRenderedContent" data-message-content class="break-words text-sm leading-relaxed text-highlighted" v-html="renderedContent" @click="handleContentClick" />
+            <div v-else-if="hasRenderedContent" data-message-content class="break-words text-sm leading-relaxed text-highlighted" v-html="renderedContent" @click="handleContentClick" @error="handleImageError" />
           </div>
 
           <div v-if="!isDeleted && (reactionGroups.length || canReact)" ref="pickerRef" class="relative -mt-1.5 mb-1 flex items-center gap-0.5" :class="isOwn ? 'justify-end' : ''">

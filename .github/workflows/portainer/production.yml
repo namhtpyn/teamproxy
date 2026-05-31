@@ -7,6 +7,7 @@ services:
     env_file: stack.env
     environment:
       NUXT_DATABASE_URL: /app/data/local.db
+      IMAGE_CACHE_DIR: /app/data/images
     networks:
       - nginx-proxy
 

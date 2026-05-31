@@ -4,6 +4,7 @@ import { db } from '../../db/client'
 import { getActiveToken } from '../../db/get-active-token'
 import { createGraphClient } from '../../ms-graph/graph-client'
 import { liveEventSchema, getEventPublisher } from '../../utils/event-bus'
+import { prefetchMessageImages } from '../../utils/image-cache'
 import { getMsSubscriptionsByClientStates, updateLastMessageAt } from '../../utils/ms-subscription-store'
 
 // MS Graph resource format: OData chats('id')/messages('id') or REST /chats/id/messages/id
@@ -94,6 +95,8 @@ export default defineEventHandler(async (event) => {
               JSON.stringify(message.eventDetail),
             )
           }
+
+          prefetchMessageImages(message.body?.content ?? undefined, token.accessToken)
 
           const eventType: 'message' | 'error' =
             notification.changeType === 'deleted' ? 'error' : 'message'
