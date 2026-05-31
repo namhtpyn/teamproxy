@@ -1,13 +1,9 @@
 import type { ChatMessage, ChatMessageInfo, ChatMessageReaction, ConversationMember } from '@microsoft/microsoft-graph-types'
-import type { MessageContentType, MessageType } from '#shared/utils/enums'
+import type { MessageType } from '#shared/utils/enums'
 import type { Chat, ChatMember, LastMessagePreview } from '~/types/chat'
 
 export function getMessageContent(msg: ChatMessage): string {
   return msg.body?.content ?? ''
-}
-
-export function getMessageContentType(msg: ChatMessage): string {
-  return msg.body?.contentType ?? 'text'
 }
 
 export function getSender(msg: ChatMessage): { id: string; displayName: string } | null {
@@ -55,16 +51,8 @@ export function getLastMessagePreview(chat: Chat): LastMessagePreview | null {
   }
 }
 
-export function isChatHidden(chat: Chat): boolean {
-  return chat.viewpoint?.isHidden ?? false
-}
-
 export function getLastMessageReadDateTime(chat: Chat): string | null {
   return chat.viewpoint?.lastMessageReadDateTime ?? null
-}
-
-export function getLastUpdatedDateTime(chat: Chat): string {
-  return chat.lastUpdatedDateTime ?? new Date().toISOString()
 }
 
 export function setLastMessagePreview(chat: Chat, preview: LastMessagePreview): void {

@@ -7,6 +7,8 @@ const props = defineProps<{
   messages: (ChatMessage | OptimisticChatMessage)[]
   loadingMore: boolean
   msUserId?: string | null
+  editingMessageId?: string | null
+  pinnedMessageIds?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -16,6 +18,10 @@ const emit = defineEmits<{
   'reply': [messageId: string]
   'edit': [messageId: string]
   'delete': [messageId: string]
+  'save-edit': [payload: { messageId: string; content: string }]
+  'cancel-edit': []
+  'pin': [messageId: string]
+  'unpin': [messageId: string]
 }>()
 
 const messagesContainer = ref<HTMLElement | null>(null)
@@ -84,11 +90,17 @@ defineExpose({ scrollToBottom, isNearBottom })
            :key="msg.id"
            :msg="msg"
            :ms-user-id="msUserId"
+           :editing="msg.id === editingMessageId"
+           :pinned="pinnedMessageIds?.includes(msg.id!) ?? false"
            @retry="emit('retry', msg.id!)"
            @react="emit('react', { messageId: msg.id!, reactionType: $event })"
            @reply="emit('reply', $event)"
            @edit="emit('edit', $event)"
            @delete="emit('delete', $event)"
+           @save-edit="emit('save-edit', $event)"
+           @cancel-edit="emit('cancel-edit')"
+           @pin="emit('pin', $event)"
+           @unpin="emit('unpin', $event)"
          />
       </div>
     </div>

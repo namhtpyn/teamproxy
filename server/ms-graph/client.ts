@@ -92,7 +92,7 @@ export async function graphRequest<T>(options: GraphRequestOptions): Promise<T |
 
   const contentType = successResponse.headers.get('content-type')
   if (contentType?.includes('application/json')) {
-    return successResponse.json() as Promise<T>
+    return successResponse.json()
   }
 
   return undefined

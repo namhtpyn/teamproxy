@@ -29,6 +29,15 @@ export interface RenewSubscriptionParams {
   expirationDateTime: string
 }
 
+function toQueryParams(params?: ODataQueryParams): Record<string, string> | undefined {
+  if (!params) return undefined
+  const result: Record<string, string> = {}
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) result[key] = String(value)
+  }
+  return result
+}
+
 export function createGraphClient({ accessToken }: GraphClientOptions) {
   return {
     async getMe(): Promise<{ id: string; displayName: string }> {
@@ -46,7 +55,7 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
         const data = await graphRequest<{ value: Chat[] }>({
           method: 'GET',
           path: '/me/chats',
-          query: params as Record<string, string>,
+          query: toQueryParams(params),
           accessToken,
         })
         return data?.value ?? []
@@ -55,7 +64,7 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
         const data = await graphRequest<{ value: ChatMessage[] }>({
           method: 'GET',
           path: `/chats/${chatId}/messages`,
-          query: params as Record<string, string>,
+          query: toQueryParams(params),
           accessToken,
         })
         return data?.value ?? []
@@ -127,10 +136,35 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
           accessToken,
         })
       },
-      async deleteMessage(chatId: string, messageId: string): Promise<void> {
+      async softDeleteMessage(userId: string, chatId: string, messageId: string): Promise<void> {
+        await graphRequest({
+          method: 'POST',
+          path: `/users/${userId}/chats/${chatId}/messages/${messageId}/softDelete`,
+          accessToken,
+        })
+      },
+      async updateMessage(chatId: string, messageId: string, body: { contentType: string; content: string }): Promise<void> {
+        await graphRequest({
+          method: 'PATCH',
+          path: `/chats/${chatId}/messages/${messageId}`,
+          body: { body },
+          accessToken,
+        })
+      },
+      async pinMessage(chatId: string, messageId: string): Promise<void> {
+        await graphRequest({
+          method: 'POST',
+          path: `/chats/${chatId}/pinnedMessages`,
+          body: {
+            'message@odata.bind': `https://graph.microsoft.com/v1.0/chats/${chatId}/messages/${messageId}`,
+          },
+          accessToken,
+        })
+      },
+      async unpinMessage(chatId: string, messageId: string): Promise<void> {
         await graphRequest({
           method: 'DELETE',
-          path: `/chats/${chatId}/messages/${messageId}`,
+          path: `/chats/${chatId}/pinnedMessages/${messageId}`,
           accessToken,
         })
       },
@@ -149,7 +183,7 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
           const data = await graphRequest<{ value: Channel[] }>({
             method: 'GET',
             path: `/teams/${teamId}/channels`,
-            query: params as Record<string, string>,
+            query: toQueryParams(params),
             accessToken,
           })
           return data?.value ?? []
@@ -159,7 +193,7 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
             const data = await graphRequest<{ value: ChatMessage[] }>({
               method: 'GET',
               path: `/teams/${teamId}/channels/${channelId}/messages`,
-              query: params as Record<string, string>,
+              query: toQueryParams(params),
               accessToken,
             })
             return data?.value ?? []

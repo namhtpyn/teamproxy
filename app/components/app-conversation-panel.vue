@@ -26,9 +26,11 @@ const messagesError = ref<string | null>(null)
 const hasMore = ref(false)
 const loadingMore = ref(false)
 const msUserId = ref<string | null>(null)
-const pendingSends = ref(new Set<string>())
+const pendingSends = new Set<string>()
+const pinnedMessageIds = ref<string[]>([])
 
 const replyingTo = ref<MessageItem | null>(null)
+const editingMessageId = ref<string | null>(null)
 const messageListRef = ref<{ scrollToBottom: (force?: boolean) => void; isNearBottom: boolean } | null>(null)
 
 const sortedMessages = computed(() =>
@@ -92,6 +94,7 @@ watch(
   () => props.chat?.id,
   (newId, oldId) => {
     replyingTo.value = null
+    pinnedMessageIds.value = []
     if (newId && newId !== oldId) {
       loadMessages()
     }
@@ -114,11 +117,11 @@ function appendIncomingMessage(raw: Record<string, unknown>) {
 
   const sender = getSender(msg)
 
-  if (sender?.id && msUserId.value && sender.id === msUserId.value && pendingSends.value.size > 0) {
+  if (sender?.id && msUserId.value && sender.id === msUserId.value && pendingSends.size > 0) {
     const idx = messages.value.findIndex(m => m.id?.startsWith('temp:'))
     if (idx !== -1) {
       const tempId = messages.value[idx]!.id
-      pendingSends.value.delete(tempId ?? '')
+      pendingSends.delete(tempId ?? '')
       const updated = [...messages.value]
       updated[idx] = msg
       messages.value = updated
@@ -136,7 +139,7 @@ function handleSubmit(payload: { content: string; image: { contentBytes: string;
 
   const chatId = props.chat.id!
   const tempId = `temp:${Date.now()}`
-  pendingSends.value.add(tempId)
+  pendingSends.add(tempId)
 
   const optimisticMsg: OptimisticChatMessage = {
     id: tempId,
@@ -162,8 +165,8 @@ function handleSubmit(payload: { content: string; image: { contentBytes: string;
       : undefined,
   }).then(({ message: real }) => {
     if (props.chat?.id !== chatId) return
-    if (!pendingSends.value.has(tempId)) return
-    pendingSends.value.delete(tempId)
+    if (!pendingSends.has(tempId)) return
+    pendingSends.delete(tempId)
 
     const idx = messages.value.findIndex(m => m.id === tempId)
     if (idx !== -1) {
@@ -173,7 +176,7 @@ function handleSubmit(payload: { content: string; image: { contentBytes: string;
     }
   }).catch((err: unknown) => {
     if (props.chat?.id !== chatId) return
-    pendingSends.value.delete(tempId)
+    pendingSends.delete(tempId)
     const failedIdx = messages.value.findIndex(m => m.id === tempId)
     if (failedIdx !== -1) {
       messages.value = messages.value.map(m => m.id === tempId ? { ...m, sendFailed: getErrorMessage(err, 'Failed to send') } as OptimisticChatMessage : m)
@@ -195,7 +198,7 @@ function retryMessage(tempId: string) {
   if (!failedMsg.sendFailed) return
 
   const content = failedMsg.body?.content ?? ''
-  pendingSends.value.add(tempId)
+  pendingSends.add(tempId)
   messages.value = messages.value.map(m => m.id === tempId ? { ...m, sendFailed: undefined } as OptimisticChatMessage : m)
 
   $orpc.chats.sendMessage({
@@ -203,8 +206,8 @@ function retryMessage(tempId: string) {
     content,
   }).then(({ message: real }) => {
     if (props.chat?.id !== chatId) return
-    if (!pendingSends.value.has(tempId)) return
-    pendingSends.value.delete(tempId)
+    if (!pendingSends.has(tempId)) return
+    pendingSends.delete(tempId)
 
     const replaceIdx = messages.value.findIndex(m => m.id === tempId)
     if (replaceIdx !== -1) {
@@ -214,7 +217,7 @@ function retryMessage(tempId: string) {
     }
   }).catch((err: unknown) => {
     if (props.chat?.id !== chatId) return
-    pendingSends.value.delete(tempId)
+    pendingSends.delete(tempId)
     messages.value = messages.value.map(m => m.id === tempId ? { ...m, sendFailed: getErrorMessage(err, 'Failed to send') } as OptimisticChatMessage : m)
     toast.add({ title: 'Failed to send message', description: getErrorMessage(err, 'Failed to send message'), color: 'error' })
   })
@@ -285,25 +288,77 @@ function clearReply() {
 }
 
 function onEdit(messageId: string) {
-  // TODO: implement message editing
-  console.log('edit message', messageId)
+  editingMessageId.value = messageId
+  replyingTo.value = null
+}
+
+function onSaveEdit(payload: { messageId: string; content: string }) {
+  if (!props.chat) return
+  const chatId = props.chat.id!
+  const { messageId, content } = payload
+
+  const msg = messages.value.find(m => m.id === messageId)
+  if (!msg?.body) return
+
+  const oldContent = msg.body.content
+  msg.body.content = content
+
+  editingMessageId.value = null
+
+  $orpc.chats.editMessage({ chatId, messageId, content }).catch((err: unknown) => {
+    const target = messages.value.find(m => m.id === messageId)
+    if (target?.body) target.body.content = oldContent
+    toast.add({ title: 'Failed to edit message', description: getErrorMessage(err, 'Failed to edit'), color: 'error' })
+  })
+}
+
+function onCancelEdit() {
+  editingMessageId.value = null
 }
 
 function onDelete(messageId: string) {
   if (!props.chat) return
   const chatId = props.chat.id!
 
-  const idx = messages.value.findIndex(m => m.id === messageId)
-  if (idx === -1) return
+  const msg = messages.value.find(m => m.id === messageId)
+  if (!msg) return
 
-  const removed = messages.value[idx]!
-  messages.value = messages.value.filter(m => m.id !== messageId)
+  const oldDeletedDateTime = (msg as Record<string, unknown>).deletedDateTime
+  const oldContent = msg.body?.content ?? ''
+  if (msg.body) msg.body.content = ''
+  ;(msg as Record<string, unknown>).deletedDateTime = new Date().toISOString()
 
   $orpc.chats.deleteMessage({ chatId, messageId }).catch((err: unknown) => {
-    const updated = [...messages.value]
-    updated.splice(idx, 0, removed)
-    messages.value = updated
+    const target = messages.value.find(m => m.id === messageId)
+    if (target) {
+      if (target.body) target.body.content = oldContent
+      ;(target as Record<string, unknown>).deletedDateTime = oldDeletedDateTime
+    }
     toast.add({ title: 'Failed to delete message', description: getErrorMessage(err, 'Failed to delete'), color: 'error' })
+  })
+}
+
+function onPin(messageId: string) {
+  if (!props.chat) return
+  const chatId = props.chat.id!
+
+  pinnedMessageIds.value = [...pinnedMessageIds.value, messageId]
+
+  $orpc.chats.pinMessage({ chatId, messageId }).catch((err: unknown) => {
+    pinnedMessageIds.value = pinnedMessageIds.value.filter(id => id !== messageId)
+    toast.add({ title: 'Failed to pin message', description: getErrorMessage(err, 'Failed to pin'), color: 'error' })
+  })
+}
+
+function onUnpin(messageId: string) {
+  if (!props.chat) return
+  const chatId = props.chat.id!
+
+  pinnedMessageIds.value = pinnedMessageIds.value.filter(id => id !== messageId)
+
+  $orpc.chats.unpinMessage({ chatId, messageId }).catch((err: unknown) => {
+    pinnedMessageIds.value = [...pinnedMessageIds.value, messageId]
+    toast.add({ title: 'Failed to unpin message', description: getErrorMessage(err, 'Failed to unpin'), color: 'error' })
   })
 }
 </script>
@@ -353,12 +408,18 @@ function onDelete(messageId: string) {
          :messages="sortedMessages"
          :loading-more="loadingMore"
          :ms-user-id="msUserId"
+         :editing-message-id="editingMessageId"
+         :pinned-message-ids="pinnedMessageIds"
          @load-more="loadMore"
          @retry="retryMessage"
          @react="handleReaction"
          @reply="onReply"
          @edit="onEdit"
          @delete="onDelete"
+         @save-edit="onSaveEdit"
+         @cancel-edit="onCancelEdit"
+         @pin="onPin"
+         @unpin="onUnpin"
        />
 
       <AppMessageInput

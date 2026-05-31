@@ -108,7 +108,4 @@ export function getSystemEventInfo(eventDetail: Record<string, unknown> | null |
   }
 }
 
-/** @deprecated Use getSystemEventInfo */
-export function getSystemEventText(eventDetail: Record<string, unknown> | null | undefined): string | null {
-  return getSystemEventInfo(eventDetail)?.text ?? null
-}
+

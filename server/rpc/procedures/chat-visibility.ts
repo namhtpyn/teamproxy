@@ -45,7 +45,7 @@ export const chatVisibilityRouter = {
       const rowMap = new Map(rows.map((r) => [r.chatId, r]))
 
       return {
-        chats: page.map((c: Chat) => {
+        chats: page.map((c) => {
           const row = rowMap.get(c.id!)
           return {
             ...c,

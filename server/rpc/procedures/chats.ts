@@ -150,7 +150,8 @@ export const chatsRouter = {
         )
       }
 
-      return { message: response as ChatMessage }
+      if (!response) throw new ORPCError('INTERNAL', { message: 'Failed to send message' })
+      return { message: response }
     }),
 
   deleteMessage: authed
@@ -167,7 +168,29 @@ export const chatsRouter = {
         throw new ORPCError('FORBIDDEN', { message: 'Not allowed to delete messages in this chat' })
       }
       const client = createGraphClient({ accessToken })
-      await client.chats.deleteMessage(input.chatId, input.messageId)
+      const me = await client.getMe()
+      await client.chats.softDeleteMessage(me.id, input.chatId, input.messageId)
+    }),
+
+  editMessage: authed
+    .use(rateLimited)
+    .input(
+      z.object({
+        chatId: z.string(),
+        messageId: z.string(),
+        content: z.string().max(4000),
+      }),
+    )
+    .handler(async ({ input, context: { accessToken } }) => {
+      const chatAccess = getAllowedChat(input.chatId)
+      if (!chatAccess || !chatAccess.allowed || !chatAccess.canRespond) {
+        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to edit messages in this chat' })
+      }
+      const client = createGraphClient({ accessToken })
+      await client.chats.updateMessage(input.chatId, input.messageId, {
+        contentType: 'text',
+        content: input.content,
+      })
     }),
 
   setReaction: authed
@@ -204,6 +227,40 @@ export const chatsRouter = {
       }
       const client = createGraphClient({ accessToken })
       await client.chats.unsetReaction(input.chatId, input.messageId, input.reactionType)
+    }),
+
+  pinMessage: authed
+    .use(rateLimited)
+    .input(
+      z.object({
+        chatId: z.string(),
+        messageId: z.string(),
+      }),
+    )
+    .handler(async ({ input, context: { accessToken } }) => {
+      const chatAccess = getAllowedChat(input.chatId)
+      if (!chatAccess || !chatAccess.allowed || !chatAccess.canRespond) {
+        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to pin messages in this chat' })
+      }
+      const client = createGraphClient({ accessToken })
+      await client.chats.pinMessage(input.chatId, input.messageId)
+    }),
+
+  unpinMessage: authed
+    .use(rateLimited)
+    .input(
+      z.object({
+        chatId: z.string(),
+        messageId: z.string(),
+      }),
+    )
+    .handler(async ({ input, context: { accessToken } }) => {
+      const chatAccess = getAllowedChat(input.chatId)
+      if (!chatAccess || !chatAccess.allowed || !chatAccess.canRespond) {
+        throw new ORPCError('FORBIDDEN', { message: 'Not allowed to unpin messages in this chat' })
+      }
+      const client = createGraphClient({ accessToken })
+      await client.chats.unpinMessage(input.chatId, input.messageId)
     }),
 
   liveMessages: authed.output(eventIterator(messageEventSchema)).handler(async function* ({

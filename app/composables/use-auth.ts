@@ -3,7 +3,7 @@ import type { UserRole } from '#shared/utils/enums'
 interface AuthUser {
   id: string
   displayName: string | null
-  role: UserRole
+  role?: UserRole
 }
 
 interface AuthStatus {
@@ -36,7 +36,7 @@ export function useAuth() {
       return cookieVal ? { authenticated: cookieVal.authenticated, user: null } satisfies AuthStatus : null
     }
     // Cookie doesn't store role — role is populated after fetchStatus()
-    return { authenticated: true, user: { ...cookieVal.user, role: undefined as unknown as UserRole } }
+    return { authenticated: true, user: { ...cookieVal.user } }
   })
   const loading = useState<boolean>('auth:loading', () => false)
 

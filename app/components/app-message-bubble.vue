@@ -9,6 +9,8 @@ import { onClickOutside, useClipboard } from '@vueuse/core'
 const props = defineProps<{
   msg: ChatMessage | OptimisticChatMessage
   msUserId?: string | null
+  editing?: boolean
+  pinned?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -17,6 +19,10 @@ const emit = defineEmits<{
   reply: [messageId: string]
   edit: [messageId: string]
   delete: [messageId: string]
+  pin: [messageId: string]
+  unpin: [messageId: string]
+  'save-edit': [payload: { messageId: string; content: string }]
+  'cancel-edit': []
 }>()
 
 const sender = computed(() => getSender(props.msg))
@@ -24,8 +30,42 @@ const isOwn = computed(() => !!props.msUserId && sender.value?.id === props.msUs
 const isSending = computed(() => props.msg.id?.startsWith('temp:') && !('sendFailed' in props.msg && props.msg.sendFailed))
 const isSystemEvent = computed(() => !!getEventDetail(props.msg))
 const systemEventInfo = computed(() => getSystemEventInfo(getEventDetail(props.msg)))
+const isDeleted = computed(() => !!(props.msg as Record<string, unknown>).deletedDateTime)
 
 const content = computed(() => getMessageContent(props.msg))
+
+const plainTextContent = computed(() => {
+  const raw = props.msg.body?.content ?? ''
+  const doc = new DOMParser().parseFromString(raw, 'text/html')
+  return (doc.body.textContent ?? '').trim()
+})
+
+const editDraft = ref('')
+watch(() => props.editing, (isEditing) => {
+  if (isEditing) editDraft.value = plainTextContent.value
+})
+
+function handleEditKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    saveEdit()
+  } else if (e.key === 'Escape') {
+    cancelEdit()
+  }
+}
+
+function saveEdit() {
+  const trimmed = editDraft.value.trim()
+  if (!trimmed || trimmed === plainTextContent.value) {
+    cancelEdit()
+    return
+  }
+  emit('save-edit', { messageId: props.msg.id!, content: trimmed })
+}
+
+function cancelEdit() {
+  emit('cancel-edit')
+}
 
 const replyReference = computed(() => {
   const attachments = (props.msg as ChatMessage).attachments
@@ -91,6 +131,8 @@ const reactionGroups = computed(() => groupReactions(props.msg.reactions ?? unde
 const showReactionPicker = ref(false)
 const canReact = computed(() => !isSystemEvent.value && !isSending.value && !props.msg.id?.startsWith('temp:'))
 
+const isPinned = computed(() => props.pinned)
+
 const contextItems = computed<ContextMenuItem[][]>(() => {
   const items: ContextMenuItem[][] = []
 
@@ -102,6 +144,12 @@ const contextItems = computed<ContextMenuItem[][]>(() => {
 
   items.push([
     { label: 'Copy message', icon: 'i-lucide-copy', onSelect: () => copyMessage() },
+  ])
+
+  items.push([
+    isPinned.value
+      ? { label: 'Unpin', icon: 'i-lucide-pin-off', onSelect: () => emit('unpin', props.msg.id!) }
+      : { label: 'Pin', icon: 'i-lucide-pin', onSelect: () => emit('pin', props.msg.id!) },
   ])
 
   if (isOwn.value && !isSending.value && !isSystemEvent.value) {
@@ -118,9 +166,7 @@ const { copy, copied } = useClipboard()
 const toast = useToast()
 
 watch(copied, (isCopied) => {
-  if (isCopied) {
-    toast.add({ title: 'Copied!', color: 'success' })
-  }
+  if (isCopied) toast.add({ title: 'Copied!', color: 'success' })
 })
 
 function copyMessage() {
@@ -161,7 +207,7 @@ const messageTime = computed(() => formatMessageTime(props.msg.createdDateTime ?
     </div>
   </div>
 
-  <UContextMenu v-else :items="contextItems" :disabled="isSystemEvent || isSending">
+  <UContextMenu v-else :items="contextItems" :disabled="isSystemEvent || isSending || editing || isDeleted">
     <div :class="isOwn ? 'flex justify-end' : 'flex justify-start'">
       <div :class="isOwn ? 'max-w-[70%]' : 'flex max-w-[70%] items-start gap-2'">
         <UAvatar
@@ -185,15 +231,46 @@ const messageTime = computed(() => formatMessageTime(props.msg.createdDateTime ?
             </span>
           </div>
 
-          <div class="rounded-2xl px-3.5 py-2" :class="sendFailed ? 'bg-red-500/15 ring-1 ring-red-500/30' : isOwn ? 'bg-accented' : 'bg-elevated'">
+          <div class="relative rounded-2xl px-3.5 py-2" :class="sendFailed ? 'bg-red-500/15 ring-1 ring-red-500/30' : isOwn ? 'bg-accented' : 'bg-elevated'">
+            <div v-if="pinned" class="absolute -top-1 -right-1">
+              <UIcon name="i-lucide-pin" class="h-3 w-3 text-dimmed" />
+            </div>
             <div v-if="replyReference" class="mb-1.5 border-l-2 border-primary/40 pl-2">
               <p class="text-[11px] font-medium text-primary/80">{{ replyReference.senderName }}</p>
               <p class="truncate text-[11px] text-dimmed">{{ replyReference.previewText }}</p>
             </div>
-            <div v-if="hasRenderedContent" data-message-content class="break-words text-sm leading-relaxed text-highlighted" v-html="renderedContent" @click="handleContentClick" />
+            <template v-if="editing">
+              <UTextarea
+                v-model="editDraft"
+                :rows="1"
+                :maxrows="3"
+                autoresize
+                autofocus
+                class="text-sm"
+                @keydown="handleEditKeydown"
+              />
+              <div class="mt-1.5 flex items-center justify-end gap-1">
+                <UButton
+                  icon="i-lucide-check"
+                  size="xs"
+                  variant="ghost"
+                  aria-label="Save edit"
+                  @click="saveEdit"
+                />
+                <UButton
+                  icon="i-lucide-x"
+                  size="xs"
+                  variant="ghost"
+                  aria-label="Cancel edit"
+                  @click="cancelEdit"
+                />
+              </div>
+            </template>
+            <p v-else-if="isDeleted" class="italic text-sm text-dimmed">This message has been deleted.</p>
+            <div v-else-if="hasRenderedContent" data-message-content class="break-words text-sm leading-relaxed text-highlighted" v-html="renderedContent" @click="handleContentClick" />
           </div>
 
-          <div v-if="reactionGroups.length || canReact" ref="pickerRef" class="relative -mt-1.5 mb-1 flex items-center gap-0.5" :class="isOwn ? 'justify-end' : ''">
+          <div v-if="!isDeleted && (reactionGroups.length || canReact)" ref="pickerRef" class="relative -mt-1.5 mb-1 flex items-center gap-0.5" :class="isOwn ? 'justify-end' : ''">
             <button
               v-for="group in reactionGroups"
               :key="group.reactionType"

@@ -8,33 +8,41 @@ import { getChatMembers, getChatTopic, getChatType } from '~/utils/graph-helpers
 const { $orpcClient: $orpc } = useNuxtApp()
 const toast = useToast()
 
-const loadingMore = ref(false)
+const PAGE_SIZE = 10
+const currentPage = ref(1)
+const cursors = ref<(string | undefined)[]>([undefined])
+
 const togglingId = ref<string | null>(null)
 const allowedTogglingId = ref<string | null>(null)
-const nextCursor = ref<string | undefined>(undefined)
+const hasNextPage = ref(false)
 
-const { state: chats, isLoading: loading, error, execute: fetchVisibility } = useAsyncState(
+const { state: chats, isLoading: loading, error, execute: fetchPage } = useAsyncState(
   async () => {
-    nextCursor.value = undefined
-    const result = await $orpc.chatVisibility.getVisibility({ limit: 20 })
-    nextCursor.value = result.nextCursor
+    const cursor = cursors.value[currentPage.value - 1]
+    const result = await $orpc.chatVisibility.getVisibility({ cursor, limit: PAGE_SIZE })
+    hasNextPage.value = !!result.nextCursor
+    if (result.nextCursor && !cursors.value[currentPage.value]) {
+      cursors.value[currentPage.value] = result.nextCursor
+    }
     return result.chats
   },
   [] as VisibilityChat[],
 )
 
-async function loadMore() {
-  if (!nextCursor.value) return
-  loadingMore.value = true
-  try {
-    const result = await $orpc.chatVisibility.getVisibility({ cursor: nextCursor.value, limit: 20 })
-    chats.value.push(...result.chats)
-    nextCursor.value = result.nextCursor
-  } catch (err: unknown) {
-    toast.add({ title: getErrorMessage(err, 'Failed to load more chats'), color: 'error' })
-  } finally {
-    loadingMore.value = false
-  }
+function goToPage(page: number) {
+  if (page < 1 || page > cursors.value.length) return
+  currentPage.value = page
+  fetchPage()
+}
+
+function nextPage() {
+  if (!hasNextPage.value) return
+  goToPage(currentPage.value + 1)
+}
+
+function prevPage() {
+  if (currentPage.value <= 1) return
+  goToPage(currentPage.value - 1)
 }
 
 const allowedCount = computed(() => chats.value.filter((c) => c.allowed).length)
@@ -145,11 +153,11 @@ function chatTypeLabel(chatType: string): string {
               Allowed Chats
             </p>
             <p class="text-xs text-muted">
-              {{ allowedCount }} of {{ chats.length }} chats visible to users
+              {{ allowedCount }} of {{ chats.length }} chats visible on this page
             </p>
           </div>
         </div>
-        <UButton variant="ghost" size="xs" aria-label="Refresh" :loading="loading" @click="fetchVisibility()">
+        <UButton variant="ghost" size="xs" aria-label="Refresh" :loading="loading" @click="fetchPage()">
           <UIcon name="i-lucide-refresh-cw" class="h-3 w-3" />
         </UButton>
       </div>
@@ -160,70 +168,90 @@ function chatTypeLabel(chatType: string): string {
 
       <AppEmptyState v-else-if="chats.length === 0" icon="i-lucide-message-square" message="No chats found" />
 
-      <UTable v-else :data="tableData" :columns="columns" sticky class="max-h-80">
-        <template #name-cell="{ row }">
-          <div class="min-w-0 break-words">
-            <p class="text-sm font-medium text-highlighted">
-              {{ row.original.name }}
-            </p>
-            <p class="text-xs text-dimmed">
-              {{ chatTypeLabel(getChatType(row.original)) }}
-            </p>
-          </div>
-        </template>
-
-        <template #subscription-cell="{ row }">
-          <UIcon
-            v-if="allowedTogglingId === row.original.id"
-            name="i-lucide-loader-circle"
-            class="h-4 w-4 animate-spin text-muted"
-          />
-          <UBadge
-            v-else
-            :color="row.original.subscriptionStatus === 'active' ? 'success' : row.original.subscriptionStatus === 'expired' ? 'warning' : 'neutral'"
-            variant="subtle"
-            size="sm"
-          >
-            {{ row.original.subscriptionStatus === 'active' ? 'Active' : row.original.subscriptionStatus === 'expired' ? 'Expired' : 'None' }}
-          </UBadge>
-        </template>
-
-        <template #canRespond-cell="{ row }">
-          <USwitch
-            v-if="row.original.allowed"
-            :model-value="row.original.canRespond"
-            :disabled="togglingId !== null"
-            :loading="togglingId === row.original.id"
-            :aria-label="`Toggle respond for ${row.original.name}`"
-            color="primary"
-            @update:model-value="toggleRespond(row.original)"
-          />
-          <span v-else class="text-xs text-dimmed">—</span>
-        </template>
-
-        <template #allowed-cell="{ row }">
-          <USwitch
-            :model-value="row.original.allowed"
-            :disabled="allowedTogglingId !== null"
-            :loading="allowedTogglingId === row.original.id"
-            :aria-label="`Toggle visibility for ${row.original.name}`"
-            color="primary"
-            @update:model-value="toggleChat(row.original)"
-          />
-        </template>
-      </UTable>
-
-      <div v-if="nextCursor" class="mt-3 flex justify-center">
-        <UButton
-          variant="outline"
-          size="sm"
-          :loading="loadingMore"
-          :disabled="loading"
-          @click="loadMore()"
+      <template v-else>
+        <UTable
+          :data="tableData"
+          :columns="columns"
+          :loading="loading"
+          sticky
+          class="max-h-80"
         >
-          Load more
-        </UButton>
-      </div>
+          <template #name-cell="{ row }">
+            <div class="min-w-0 break-words">
+              <p class="text-sm font-medium text-highlighted">
+                {{ row.original.name }}
+              </p>
+              <p class="text-xs text-dimmed">
+                {{ chatTypeLabel(getChatType(row.original)) }}
+              </p>
+            </div>
+          </template>
+
+          <template #subscription-cell="{ row }">
+            <UIcon
+              v-if="allowedTogglingId === row.original.id"
+              name="i-lucide-loader-circle"
+              class="h-4 w-4 animate-spin text-muted"
+            />
+            <UBadge
+              v-else
+              :color="row.original.subscriptionStatus === 'active' ? 'success' : row.original.subscriptionStatus === 'expired' ? 'warning' : 'neutral'"
+              variant="subtle"
+              size="sm"
+            >
+              {{ row.original.subscriptionStatus === 'active' ? 'Active' : row.original.subscriptionStatus === 'expired' ? 'Expired' : 'None' }}
+            </UBadge>
+          </template>
+
+          <template #canRespond-cell="{ row }">
+            <USwitch
+              v-if="row.original.allowed"
+              :model-value="row.original.canRespond"
+              :disabled="togglingId !== null"
+              :loading="togglingId === row.original.id"
+              :aria-label="`Toggle respond for ${row.original.name}`"
+              color="primary"
+              @update:model-value="toggleRespond(row.original)"
+            />
+            <span v-else class="text-xs text-dimmed">—</span>
+          </template>
+
+          <template #allowed-cell="{ row }">
+            <USwitch
+              :model-value="row.original.allowed"
+              :disabled="allowedTogglingId !== null"
+              :loading="allowedTogglingId === row.original.id"
+              :aria-label="`Toggle visibility for ${row.original.name}`"
+              color="primary"
+              @update:model-value="toggleChat(row.original)"
+            />
+          </template>
+        </UTable>
+
+        <div class="mt-3 flex items-center justify-between gap-4">
+          <p class="text-xs text-dimmed">
+            Page {{ currentPage }}
+          </p>
+          <div class="flex items-center gap-2">
+            <UButton
+              variant="outline"
+              size="xs"
+              icon="i-lucide-chevron-left"
+              :disabled="currentPage <= 1 || loading"
+              aria-label="Previous page"
+              @click="prevPage()"
+            />
+            <UButton
+              variant="outline"
+              size="xs"
+              icon="i-lucide-chevron-right"
+              :disabled="!hasNextPage || loading"
+              aria-label="Next page"
+              @click="nextPage()"
+            />
+          </div>
+        </div>
+      </template>
     </UCard>
   </section>
 </template>

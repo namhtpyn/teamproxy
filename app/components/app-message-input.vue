@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Editor } from '@tiptap/vue-3'
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { ChatMember, OptimisticChatMessage } from '~/types/chat'
 
@@ -17,61 +18,43 @@ const emit = defineEmits<{
   'cancel-reply': []
 }>()
 
-const uTextareaRef = ref<{ textareaRef?: HTMLTextAreaElement } | null>(null)
-const textareaRef = computed(() => uTextareaRef.value?.textareaRef ?? null)
-const newMessage = ref('')
-
-const {
-  mentionQuery,
-  mentionVisible,
-  mentionPickerRef,
-  selectedMentions,
-  handleTextareaInput,
-  handleMentionSelect,
-  handleMentionKeydown,
-  resetMentions,
-} = useMentions(textareaRef, newMessage)
+const editorContent = ref('')
+let editorInstance: Editor | null = null
 
 const {
   pendingImage,
   imageError,
-  handlePaste,
+  handlePaste: handleImagePaste,
   removePendingImage,
 } = useImageUpload()
 
-const replyPreviewText = computed(() => {
-  if (!props.replyingTo) return ''
-  const content = props.replyingTo.body?.content ?? ''
-  return content
-    .replace(/<[^>]*>/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 60)
-})
+function extractMentionsFromEditor(): Array<{ userId: string; displayName: string }> {
+  const editor = editorInstance
+  if (!editor || editor.isDestroyed) return []
+  const mentions: Array<{ userId: string; displayName: string }> = []
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === 'mention') {
+      const userId = (node.attrs.id as string | undefined) ?? (node.attrs.userId as string | undefined)
+      const displayName = node.attrs.label as string | undefined
+      if (userId && displayName && !mentions.some(m => m.userId === userId)) {
+        mentions.push({ userId, displayName })
+      }
+    }
+  })
+  return mentions
+}
 
-const replySenderName = computed(() => {
-  if (!props.replyingTo) return ''
-  return (props.replyingTo as ChatMessage).from?.user?.displayName ?? 'Unknown'
-})
-
-function handleKeydown(e: KeyboardEvent) {
-  if (handleMentionKeydown(e)) return
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-    sendMessage()
-  }
+function extractPlainText(html: string): string {
+  const div = document.createElement('div')
+  div.innerHTML = html
+  return (div.textContent ?? '').trim()
 }
 
 function sendMessage() {
-  if (!newMessage.value.trim() && !pendingImage.value) return
+  const text = extractPlainText(editorContent.value)
+  if (!text && !pendingImage.value) return
 
-  const content = newMessage.value.trim()
-  const mentions = selectedMentions.value.length > 0
-    ? selectedMentions.value.map((m) => ({
-        userId: m.userId,
-        displayName: m.displayName,
-      }))
-    : undefined
+  const mentions = extractMentionsFromEditor()
   const image = pendingImage.value
     ? {
         contentBytes: pendingImage.value.contentBytes,
@@ -79,15 +62,72 @@ function sendMessage() {
       }
     : null
 
-  newMessage.value = ''
-  resetMentions()
+  editorContent.value = ''
   pendingImage.value = null
 
-  emit('submit', { content, image, mentions, replyToId: props.replyingTo?.id?.startsWith('temp:') ? undefined : props.replyingTo?.id })
+  emit('submit', {
+    content: text,
+    image,
+    mentions: mentions.length > 0 ? mentions : undefined,
+    replyToId: props.replyingTo?.id?.startsWith('temp:') ? undefined : props.replyingTo?.id,
+  })
 }
 
+function handleEditorKeydown(_view: unknown, event: KeyboardEvent): boolean {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    sendMessage()
+    return true
+  }
+  return false
+}
+
+function handleEditorPaste(_view: unknown, event: ClipboardEvent): boolean {
+  handleImagePaste(event)
+  return event.defaultPrevented
+}
+
+const editorUi = {
+  root: 'rounded-lg border border-default bg-elevated overflow-hidden',
+  content: 'relative min-h-[38px] max-h-[120px] overflow-y-auto',
+  base: 'w-full outline-none px-3 py-2.5 text-sm *:m-0 [&_p]:leading-6 [&_.mention]:text-primary [&_.mention]:font-medium selection:bg-primary/20',
+}
+
+const editorStarterKit = {
+  blockquote: false,
+  codeBlock: false,
+  heading: false,
+  bulletList: false,
+  orderedList: false,
+}
+
+const editorPropsConfig = {
+  handleKeyDown: handleEditorKeydown,
+  handlePaste: handleEditorPaste,
+}
+
+const mentionAppendTo = () => document.body
+
+const mentionItems = computed(() =>
+  props.members
+    .filter((m): m is ChatMember & { userId: string } => m.userId != null && m.userId !== props.msUserId)
+    .map(m => ({ label: m.displayName, id: m.userId })),
+)
+
+const replySenderName = computed(() => {
+  if (!props.replyingTo) return ''
+  const senderId = props.replyingTo.from?.user?.id
+  const member = props.members.find(m => m.userId === senderId)
+  return member?.displayName ?? props.replyingTo.from?.user?.displayName ?? 'Unknown'
+})
+
+const replyPreviewText = computed(() => {
+  if (!props.replyingTo) return ''
+  return (props.replyingTo.body?.content ?? '').replace(/<[^>]*>/g, '').slice(0, 80)
+})
+
 watch(() => props.chatId, () => {
-  resetMentions()
+  editorContent.value = ''
 })
 </script>
 
@@ -125,30 +165,22 @@ watch(() => props.chatId, () => {
       </div>
       <p v-if="imageError" class="mt-1 text-xs text-error">{{ imageError }}</p>
       <div class="flex items-end gap-2">
-        <div class="relative flex-1">
-          <UTextarea
-            ref="uTextareaRef"
-            v-model="newMessage"
+        <div class="flex-1">
+          <UEditor
+            v-model="editorContent"
+            content-type="html"
             placeholder="Type a message..."
-            aria-label="Type a message"
-            autoresize
-            :min-rows="1"
-            :max-rows="5"
-            class="w-full"
-            role="combobox"
-            aria-controls="mention-listbox"
-            :aria-expanded="mentionVisible"
-            @input="handleTextareaInput"
-            @keydown="handleKeydown"
-            @paste="handlePaste"
-          />
-          <AppMentionPicker
-            ref="mentionPickerRef"
-            :members="members.filter((m): m is ChatMember & { userId: string } => m.userId != null && m.userId !== props.msUserId)"
-            :query="mentionQuery"
-            :visible="mentionVisible"
-            @select="(m) => { if (m.userId) handleMentionSelect(m as ChatMember & { userId: string }) }"
-          />
+            :starter-kit="editorStarterKit"
+            :editor-props="editorPropsConfig"
+            :image="false"
+            :ui="editorUi"
+          >
+            <template #default="{ editor }">
+              <!-- Capture editor instance from slot prop — standard Vue workaround for binding slot props to local variables -->
+              <Component :is="() => { editorInstance = editor; return null }" />
+              <UEditorMentionMenu :editor="editor" :items="mentionItems" :append-to="mentionAppendTo" />
+            </template>
+          </UEditor>
         </div>
         <UButton
           type="submit"

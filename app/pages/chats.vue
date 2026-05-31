@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { Chat } from '~/types/chat'
-import type { MessageType } from '#shared/utils/enums'
+import type { MessageContentType, MessageType } from '#shared/utils/enums'
 import { whenever } from '@vueuse/core'
 import { getSender, getLastMessagePreview, setLastMessagePreview, setLastMessageReadDateTime } from '~/utils/graph-helpers'
 
@@ -23,32 +23,31 @@ const conversationPanel = ref<{ refreshMessages: () => Promise<void>; appendInco
 const chatSidebar = ref<{ chats: Chat[]; fetchChats: () => Promise<void> } | null>(null)
 
 // --- Live event subscriptions ---
-const { liveMessageEvent } = useChatMessageEvents()
-const { liveVisibilityEvent } = useChatVisibilityEvents()
-const { liveRespondEvent } = useChatRespondEvents()
-const { liveDisconnectEvent } = useDisconnectEvents()
+const liveMessageEvent = useLiveEvent('liveMessages')
+const liveVisibilityEvent = useLiveEvent('liveVisibility')
+const liveRespondEvent = useLiveEvent('liveRespond')
+const liveDisconnectEvent = useLiveEvent('liveDisconnect')
 
-function updateSidebarChat(chatId: string, msg: Record<string, unknown> | null) {
-  if (!chatSidebar.value?.chats || !msg) return
+function updateSidebarChat(chatId: string, raw: Record<string, unknown> | null) {
+  if (!chatSidebar.value?.chats || !raw) return
   const chat = chatSidebar.value.chats.find(c => c.id === chatId)
   if (!chat) return
 
-  const chatMsg = msg as ChatMessage
-  const senderName = getSender(chatMsg)?.displayName ?? null
-  const body = chatMsg.body
-  const createdAt = String(chatMsg.createdDateTime ?? new Date().toISOString())
-  const msgType = String(chatMsg.messageType ?? 'message') as MessageType
+  const msg = raw as ChatMessage
+  const senderName = getSender(msg)?.displayName ?? null
+  const body = msg.body
+  const createdAt = msg.createdDateTime ?? new Date().toISOString()
 
   let previewContent = body?.content ?? ''
-  if (chatMsg.eventDetail) {
-    previewContent = getSystemEventInfo(chatMsg.eventDetail as Record<string, unknown>)?.text ?? 'System event'
+  if (msg.eventDetail) {
+    previewContent = getSystemEventInfo(msg.eventDetail as Record<string, unknown>)?.text ?? 'System event'
   }
 
   setLastMessagePreview(chat, {
-    id: String(chatMsg.id ?? ''),
+    id: msg.id ?? '',
     createdDateTime: createdAt,
-    messageType: msgType,
-    contentType: (body?.contentType ?? 'text') as 'text' | 'html',
+    messageType: (msg.messageType ?? 'message') as MessageType,
+    contentType: (body?.contentType ?? 'text') as MessageContentType,
     content: previewContent,
     senderDisplayName: senderName,
   })

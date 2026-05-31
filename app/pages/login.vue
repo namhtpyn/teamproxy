@@ -13,9 +13,7 @@ const schema = z.object({
   username: z.string().min(1, 'Username is required'),
   password: z.string().min(1, 'Password is required'),
 })
-type Schema = z.output<typeof schema>
-
-const state = reactive<Partial<Schema>>({ username: '', password: '' })
+const state = reactive<Partial<z.output<typeof schema>>>({ username: '', password: '' })
 const error = ref('')
 const { login, loading } = useAuth()
 
