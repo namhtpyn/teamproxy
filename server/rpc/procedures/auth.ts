@@ -8,6 +8,7 @@ import { oauthTokens } from '../../db/schema'
 import { MS_SCOPE_STRING } from '../../ms-graph/scopes'
 import { getActiveToken } from '../../db/get-active-token'
 import { createGraphClient } from '../../ms-graph/graph-client'
+import { encrypt } from '../../utils/crypto'
 import { disconnectAllSubscriptions } from '../../utils/disconnect-all-subscriptions'
 import { getEventPublisher } from '../../utils/event-bus'
 
@@ -78,7 +79,12 @@ export const authRouter = {
       return { connected: false as const, accountInfo: null, accessTokenExpiresAt: null, refreshTokenExpiresAt: null }
     }
 
-    const token = getActiveToken(db)
+    let token
+    try {
+      token = getActiveToken(db)
+    } catch {
+      return { connected: false as const, accountInfo: null, accessTokenExpiresAt: null, refreshTokenExpiresAt: null }
+    }
     if (!token) {
       return { connected: false as const, accountInfo: null, accessTokenExpiresAt: null, refreshTokenExpiresAt: null }
     }
@@ -105,20 +111,12 @@ export const authRouter = {
       throw new ORPCError('NOT_FOUND', { message: 'No active session to export' })
     }
 
-    const rawRow = db.query.oauthTokens.findFirst({
-      where: { AND: [{ isActive: true }, { expiresAt: { gt: new Date() } }] },
-    }).sync()
-
-    if (!rawRow) {
-      throw new ORPCError('NOT_FOUND', { message: 'No active session to export' })
-    }
-
     const payload = {
-      accessToken: rawRow.accessToken,
-      refreshToken: rawRow.refreshToken,
-      tokenType: rawRow.tokenType,
-      scope: rawRow.scope,
-      expiresAt: rawRow.expiresAt.toISOString(),
+      accessToken: token.accessToken,
+      refreshToken: token.refreshToken,
+      tokenType: token.tokenType,
+      scope: token.scope,
+      expiresAt: token.expiresAt.toISOString(),
       exportedAt: new Date().toISOString(),
     }
 
@@ -129,13 +127,18 @@ export const authRouter = {
   importSession: adminOnly
     .input(z.object({ data: z.string() }))
     .handler(async ({ input }) => {
-      const decoded = JSON.parse(Buffer.from(input.data, 'base64').toString('utf8'))
+      let decoded: Record<string, unknown>
+      try {
+        decoded = JSON.parse(Buffer.from(input.data, 'base64').toString('utf8'))
+      } catch {
+        throw new ORPCError('BAD_REQUEST', { message: 'Invalid session data: malformed base64 or JSON' })
+      }
 
       if (!decoded.accessToken || !decoded.tokenType || !decoded.scope || !decoded.expiresAt) {
         throw new ORPCError('BAD_REQUEST', { message: 'Invalid session data: missing required fields' })
       }
 
-      const expiresAt = new Date(decoded.expiresAt)
+      const expiresAt = new Date(decoded.expiresAt as string)
 
       const existing = db.query.oauthTokens.findFirst({
         where: { isActive: true },
@@ -146,10 +149,10 @@ export const authRouter = {
       }
 
       db.insert(oauthTokens).values({
-        accessToken: decoded.accessToken,
-        refreshToken: decoded.refreshToken ?? null,
-        tokenType: decoded.tokenType,
-        scope: decoded.scope,
+        accessToken: encrypt(decoded.accessToken as string),
+        refreshToken: decoded.refreshToken ? encrypt(decoded.refreshToken as string) : null,
+        tokenType: decoded.tokenType as string,
+        scope: decoded.scope as string,
         expiresAt,
       }).run()
 
