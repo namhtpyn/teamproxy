@@ -20,7 +20,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto h-full max-w-3xl overflow-y-auto px-6 py-8">
+  <div class="h-full overflow-y-auto">
+    <div class="mx-auto max-w-3xl px-6 py-8">
     <h1 class="sr-only">Settings</h1>
     <div v-if="loading" class="flex items-center justify-center py-20">
       <AppLoadingSpinner />
@@ -50,5 +51,6 @@ onMounted(() => {
       <AppMsConnectionCard class="mb-8" />
       <AppChatVisibilityCard />
     </template>
+    </div>
   </div>
 </template>

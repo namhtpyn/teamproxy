@@ -48,7 +48,9 @@ export type { MessageType } from '#shared/utils/enums'
 
 export interface GraphRequestOptions {
   method: 'GET' | 'POST' | 'DELETE' | 'PATCH'
-  path: string
+  path?: string
+  /** Full URL (e.g. @odata.nextLink). When set, `path` and `query` are ignored. */
+  rawUrl?: string
   body?: unknown
   query?: Record<string, string>
   accessToken: string

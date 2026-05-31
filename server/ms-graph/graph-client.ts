@@ -52,14 +52,14 @@ export function createGraphClient({ accessToken }: GraphClientOptions) {
       return me
     },
     chats: {
-      async list(params?: ODataQueryParams): Promise<Chat[]> {
-        const data = await graphRequest<{ value: Chat[] }>({
+      async list(params?: ODataQueryParams): Promise<{ value: Chat[]; nextLink?: string }> {
+        const data = await graphRequest<{ value: Chat[]; '@odata.nextLink'?: string }>({
           method: 'GET',
           path: '/me/chats',
           query: toQueryParams(params),
           accessToken,
         })
-        return data?.value ?? []
+        return { value: data?.value ?? [], nextLink: data?.['@odata.nextLink'] }
       },
       async messages(chatId: string, params?: ODataQueryParams): Promise<{ value: ChatMessage[]; nextLink?: string }> {
         const data = await graphRequest<{ value: ChatMessage[]; '@odata.nextLink'?: string }>({

@@ -4,7 +4,8 @@ import { ORPCError } from '@orpc/server'
 import { CHAT_TYPES } from '#shared/utils/enums'
 import type { SubscriptionStatus } from '#shared/utils/enums'
 import { adminAuthed } from '../middleware/auth'
-import { createGraphClient, type ODataQueryParams } from '../../ms-graph/graph-client'
+import { createGraphClient, graphRequest, type ODataQueryParams } from '../../ms-graph/graph-client'
+import type { Chat } from '../../ms-graph/types'
 import { clearMsSubscription } from '../../utils/ms-subscription-store'
 import { getMsSubscriptionStatus } from '../../utils/ms-subscription-status'
 import { getEventPublisher } from '../../utils/event-bus'
@@ -19,28 +20,43 @@ export const chatVisibilityRouter = {
     .input(
       z.object({
         limit: z.number().int().min(1).max(100).default(20),
+        cursor: z.string().optional(),
       }),
     )
     .handler(async ({ input, context: { accessToken } }) => {
       const client = createGraphClient({ accessToken })
-      const query: ODataQueryParams = {
-        $expand: 'members',
-        $top: input.limit + 1,
+      const limit = input.limit
+
+      let value: Chat[]
+      let nextLink: string | undefined
+
+      if (input.cursor) {
+        const page = await graphRequest<{ value: Chat[]; '@odata.nextLink'?: string }>({
+          method: 'GET',
+          rawUrl: input.cursor,
+          accessToken,
+        })
+        value = page?.value ?? []
+        nextLink = page?.['@odata.nextLink']
+      } else {
+        const query: ODataQueryParams = {
+          $expand: 'members',
+          $top: limit,
+        }
+        const page = await client.chats.list(query)
+        value = page.value
+        nextLink = page.nextLink
       }
 
-      const allChats = await client.chats.list(query)
-      const sorted = allChats
+      const sorted = value
         .filter((c) => c.lastUpdatedDateTime)
         .sort((a, b) => new Date(b.lastUpdatedDateTime!).getTime() - new Date(a.lastUpdatedDateTime!).getTime())
-      const hasMore = sorted.length > input.limit
-      const page = sorted.slice(0, input.limit)
-      const nextCursor = undefined
 
       const rows = db.query.allowedChats.findMany().sync()
       const rowMap = new Map(rows.map((r) => [r.chatId, r]))
 
       return {
-        chats: page.map((c) => {
+        chats: sorted.map((c) => {
           const row = rowMap.get(c.id!)
           return {
             ...c,
@@ -49,7 +65,7 @@ export const chatVisibilityRouter = {
             subscriptionStatus: getMsSubscriptionStatus(row),
           }
         }),
-        nextCursor,
+        nextCursor: nextLink ?? undefined,
       }
     }),
 

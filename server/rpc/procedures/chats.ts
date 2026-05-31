@@ -37,7 +37,7 @@ export const chatsRouter = {
     const allowedMap = new Map(allowed.map((r) => [r.chatId, r]))
     const filter = allowed.map((r) => `'${r.chatId}'`).join(',')
     const client = createGraphClient({ accessToken })
-    const results = await client.chats.list({
+    const { value: results } = await client.chats.list({
       $expand: 'members,lastMessagePreview',
       $orderby: 'lastMessagePreview/createdDateTime desc',
       $filter: `id in (${filter})`,

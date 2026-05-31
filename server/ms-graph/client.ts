@@ -69,10 +69,10 @@ async function retryOrThrow(
 }
 
 export async function graphRequest<T>(options: GraphRequestOptions): Promise<T | undefined> {
-  const { method, path, body, query, accessToken } = options
+  const { method, path, rawUrl, body, query, accessToken } = options
 
-  let url = `${GRAPH_BASE}${path}`
-  if (query && Object.keys(query).length > 0) {
+  let url = rawUrl ?? `${GRAPH_BASE}${path}`
+  if (!rawUrl && query && Object.keys(query).length > 0) {
     const params = new URLSearchParams(query)
     url += `?${params.toString()}`
   }
