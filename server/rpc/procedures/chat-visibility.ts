@@ -4,8 +4,8 @@ import { ORPCError } from '@orpc/server'
 import { CHAT_TYPES } from '#shared/utils/enums'
 import type { SubscriptionStatus } from '#shared/utils/enums'
 import { adminAuthed } from '../middleware/auth'
-import { createGraphClient, graphRequest } from '../../ms-graph/graph-client'
-import type { ODataQueryParams } from '../../ms-graph/graph-client'
+import { graphRequest } from '../../ms-graph/graph-client'
+import type { createGraphClient, ODataQueryParams } from '../../ms-graph/graph-client'
 import type { Chat } from '@microsoft/microsoft-graph-types'
 import { clearMsSubscription } from '../../utils/ms-subscription-store'
 import { getMsSubscriptionStatus } from '../../utils/ms-subscription-status'
@@ -16,8 +16,10 @@ import { db } from '../../db/client'
 import { allowedChats } from '../../db/schema'
 import { eq } from 'drizzle-orm'
 
+type GraphClient = ReturnType<typeof createGraphClient>
+
 async function fetchAllPages<T>(
-  client: ReturnType<typeof createGraphClient>,
+  client: GraphClient,
   params: ODataQueryParams,
   accessToken: string,
 ): Promise<T[]> {
@@ -75,8 +77,8 @@ export const chatVisibilityRouter = {
         search: z.string().optional(),
       }),
     )
-    .handler(async ({ input, context: { accessToken } }) => {
-      const client = createGraphClient({ accessToken })
+    .handler(async ({ input, context: { accessToken, graphClient } }) => {
+      const client = graphClient!
       const limit = input.limit
       const searchTerm = input.search?.trim()
 
@@ -173,7 +175,7 @@ export const chatVisibilityRouter = {
         chatType: z.enum(CHAT_TYPES),
       }),
     )
-    .handler(async ({ input, context: { accessToken } }) => {
+    .handler(async ({ input, context: { accessToken, graphClient } }) => {
       const existing = getAllowedChat(input.chatId)
 
       let subscriptionStatus: SubscriptionStatus = 'none'
@@ -191,7 +193,7 @@ export const chatVisibilityRouter = {
           .run()
         invalidateAllowedChatsCache()
         if (!input.allowed && existing.msSubscriptionId) {
-          const client = createGraphClient({ accessToken })
+          const client = graphClient!
           try {
             await client.subscriptions.delete(existing.msSubscriptionId)
           } catch (err) {

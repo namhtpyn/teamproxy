@@ -3,9 +3,11 @@ import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { ContextMenuItem } from '@nuxt/ui'
 import type { OptimisticChatMessage, ChatMember } from '~/types/chat'
 import { CHAT_EDITOR_STARTER_KIT, REPLY_EDITOR_UI } from '~/utils/editor-config'
-import DOMPurify from 'dompurify'
 import { getEventDetail, getMessageContent, getSender, groupReactions } from '~/utils/graph-helpers'
 import { onClickOutside } from '@vueuse/core'
+import { proxyGraphImageUrls, restoreGraphImageUrls } from '~/utils/graph-image-proxy'
+import { renderMessageHtml } from '~/utils/render-message-html'
+import { parseReplyReference } from '~/utils/parse-reply-reference'
 
 const props = defineProps<{
   msg: ChatMessage | OptimisticChatMessage
@@ -42,9 +44,7 @@ const editEditorRef = shallowRef<import('@tiptap/vue-3').Editor | null>(null)
 
 watch(() => props.editing, (isEditing) => {
   if (isEditing) {
-    editDraft.value = content.value
-      .replace(/(<img[^>]*\bsrc=["'])(https:\/\/graph\.microsoft\.com\/v1\.0\/)([^"']*)(["'][^>]*>)/gi,
-        (_, prefix, _baseUrl, apiPath, suffix) => `${prefix}/api/graph-image?path=${encodeURIComponent(apiPath)}${suffix}`)
+    editDraft.value = proxyGraphImageUrls(content.value)
   }
 })
 
@@ -68,9 +68,7 @@ function saveEdit() {
     cancelEdit()
     return
   }
-  const html = editDraft.value
-    .replace(/(<img[^>]*\bsrc=["'])\/api\/graph-image\?path=([^"']*)(["'][^>]*>)/gi,
-      (_, prefix, encodedPath, suffix) => `${prefix}https://graph.microsoft.com/v1.0/${decodeURIComponent(encodedPath)}${suffix}`)
+  const html = restoreGraphImageUrls(editDraft.value)
   emit('save-edit', { messageId: props.msg.id!, content: html })
 }
 
@@ -78,47 +76,9 @@ function cancelEdit() {
   emit('cancel-edit')
 }
 
-const replyReference = computed(() => {
-  const attachments = props.msg.attachments
-  if (!attachments || attachments.length === 0) return null
-  const msgRef = attachments.find(a => a.contentType === 'messageReference')
-  if (!msgRef) return null
-  try {
-    const data = typeof msgRef.content === 'string' ? JSON.parse(msgRef.content) : msgRef.content
-    return {
-      senderName: data?.messageSender?.user?.displayName ?? 'Unknown',
-      previewText: (data?.messagePreview ?? '').replace(/<[^>]*>/g, '').trim().slice(0, 80),
-    }
-  } catch {
-    return null
-  }
-})
+const replyReference = computed(() => parseReplyReference(props.msg.attachments))
 
-const renderedContent = computed(() => {
-  if (!content.value) return ''
-  const raw = content.value
-    // Proxy <img> src from Graph API to our local proxy endpoint
-    .replace(/(<img[^>]*\bsrc=["'])(https:\/\/graph\.microsoft\.com\/v1\.0\/)([^"']*)(["'][^>]*>)/gi,
-      (_, prefix, _baseUrl, apiPath, suffix) => `${prefix}/api/graph-image?path=${encodeURIComponent(apiPath)}${suffix}`)
-    // Convert <emoji alt="😆"> to the alt text (unicode emoji)
-    .replace(/<emoji[^>]*\balt=["']([^"']*)["'][^>]*>/gi, '$1')
-    // Convert <at id="0">Name</at> to highlighted mention span
-    .replace(/<at[^>]*>([^<]*)<\/at>/gi, '<span style="color:#c24e00;font-weight:600">@$1</span>')
-    // Clean up <p> tags — convert to <br> for compact layout, strip opening <p>
-    .replace(/<p>/gi, '')
-    .replace(/<\/p>/gi, '<br>')
-    // Style inline images like Teams (rounded, max-height, zoom cursor)
-    .replace(/(<img[^>]*?)>/gi, '$1 class="inline-chat-img" style="max-width:100%;max-height:200px;border-radius:8px;display:block;margin:4px 0;cursor:zoom-in;object-fit:contain" loading="lazy">')
-    // Style links like Teams (purple, hover underline) — target blank for safety
-    .replace(/<a\s+/gi, '<a target="_blank" rel="noopener noreferrer" style="color:#6264a7" ')
-    // Remove trailing <br>
-    .replace(/<br>\s*$/i, '')
-    .trim()
-  if (import.meta.client) {
-    return DOMPurify.sanitize(raw, { ADD_ATTR: ['target', 'loading'] })
-  }
-  return raw
-})
+const renderedContent = computed(() => renderMessageHtml(content.value))
 
 const hasRenderedContent = computed(() => renderedContent.value.length > 0)
 

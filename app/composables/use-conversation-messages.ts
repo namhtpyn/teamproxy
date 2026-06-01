@@ -1,5 +1,8 @@
+import type { InfiniteData } from '@tanstack/vue-query'
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { Chat, OptimisticChatMessage } from '~/types/chat'
+import type { MessageListResponse } from '#shared/types'
+import { useInfiniteQuery, useQueryClient } from '@tanstack/vue-query'
 
 type MessageItem = ChatMessage | OptimisticChatMessage
 
@@ -7,16 +10,42 @@ export function useConversationMessages(
   chat: () => Chat | null,
   opts?: { msUserId?: () => string | null | undefined },
 ) {
-  const { $orpcClient: $orpc } = useNuxtApp()
+  const { $orpcClient } = useNuxtApp()
+  const queryClient = useQueryClient()
   const toast = useToast()
 
   const messages = ref<MessageItem[]>([])
-  const messagesLoading = ref(false)
-  const messagesError = ref<string | null>(null)
-  const nextCursor = ref<string | undefined>(undefined)
-  const loadingMore = ref(false)
   const messageListRef = ref<{ scrollToBottom: (force?: boolean) => void; isNearBottom: boolean } | null>(null)
   const pendingSends = new Set<string>()
+
+  const queryKey = computed(() => ['messages', chat()?.id] as const)
+
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: ({ pageParam }) => {
+      const c = chat()
+      if (!c) return { messages: [] as ChatMessage[], nextCursor: undefined as string | undefined }
+      return $orpcClient.chats.getMessages({
+        chatId: c.id!,
+        nextLink: pageParam as string | undefined,
+      })
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage: MessageListResponse) => lastPage.nextCursor,
+    enabled: computed(() => !!chat()?.id),
+  })
+
+  const messagesLoading = computed(() => query.isLoading.value)
+  const messagesError = computed(() => {
+    const err = query.error.value
+    return err ? getErrorMessage(err, 'Failed to load messages') : null
+  })
+  const loadingMore = computed(() => query.isFetchingNextPage.value)
+  const nextCursor = computed(() => {
+    const pages = query.data.value?.pages
+    if (!pages || pages.length === 0) return undefined
+    return pages[pages.length - 1]!.nextCursor
+  })
 
   const sortedMessages = computed(() =>
     [...messages.value].sort(
@@ -28,43 +57,50 @@ export function useConversationMessages(
 
   const isNearBottom = computed(() => messageListRef.value?.isNearBottom ?? true)
 
-  async function loadMessages() {
-    const c = chat()
-    if (!c) return
-    const chatId = c.id!
-    messages.value = []
-    messagesError.value = null
-    messagesLoading.value = true
-    nextCursor.value = undefined
-    loadingMore.value = false
+  watch(
+    () => query.data.value?.pages,
+    (pages) => {
+      if (!pages) return
+      const serverMessages = pages.flatMap(p => p.messages)
+      const optimisticMsgs = messages.value.filter(m =>
+        m.id?.startsWith('temp:') || (m as OptimisticChatMessage).sendFailed,
+      )
+      messages.value = [...serverMessages, ...optimisticMsgs]
+    },
+    { deep: true },
+  )
 
-    try {
-      const result = await $orpc.chats.getMessages({ chatId })
-      if (chat()?.id !== chatId) return
-      messages.value = result.messages
-      nextCursor.value = result.nextCursor
-    } catch (err: unknown) {
-      messagesError.value = getErrorMessage(err, 'Failed to load messages')
-      messages.value = []
-    } finally {
-      messagesLoading.value = false
+  watch(query.isLoading, (loading, wasLoading) => {
+    if (wasLoading && !loading) {
       nextTick(() => messageListRef.value?.scrollToBottom(true))
     }
+  })
+
+  watch(
+    () => query.error.value,
+    (err, prevErr) => {
+      if (err && err !== prevErr && query.data.value) {
+        toast.add({
+          title: 'Failed to load more messages',
+          description: getErrorMessage(err, 'Failed to load more messages'),
+          color: 'error',
+        })
+      }
+    },
+  )
+
+  async function loadMessages() {
+    pendingSends.clear()
+    messages.value = []
+    return queryClient.resetQueries({ queryKey: queryKey.value })
   }
 
   async function loadMore() {
-    const c = chat()
-    if (!c || loadingMore.value || !nextCursor.value) return
-    loadingMore.value = true
-
+    if (!query.hasNextPage.value || query.isFetchingNextPage.value) return
     try {
-      const result = await $orpc.chats.getMessages({ chatId: c.id!, nextLink: nextCursor.value })
-      messages.value = [...result.messages, ...messages.value]
-      nextCursor.value = result.nextCursor
-    } catch (err: unknown) {
-      toast.add({ title: 'Failed to load more messages', description: err instanceof Error ? err.message : undefined, color: 'error' })
-    } finally {
-      loadingMore.value = false
+      await query.fetchNextPage()
+    }
+    catch {
     }
   }
 
@@ -72,10 +108,18 @@ export function useConversationMessages(
     const c = chat()
     if (!c) return
     try {
-      const result = await $orpc.chats.getMessages({ chatId: c.id! })
-      messages.value = result.messages
-    } catch (err: unknown) {
-      toast.add({ title: 'Failed to refresh messages', description: err instanceof Error ? err.message : undefined, color: 'error' })
+      const result = await $orpcClient.chats.getMessages({ chatId: c.id! })
+      queryClient.setQueryData(queryKey.value, {
+        pages: [result],
+        pageParams: [undefined as string | undefined],
+      } satisfies InfiniteData<MessageListResponse>)
+    }
+    catch (err: unknown) {
+      toast.add({
+        title: 'Failed to refresh messages',
+        description: err instanceof Error ? err.message : undefined,
+        color: 'error',
+      })
     }
   }
 
@@ -93,6 +137,18 @@ export function useConversationMessages(
         const updated = [...messages.value]
         updated[idx] = msg
         messages.value = updated
+
+        queryClient.setQueryData(queryKey.value, (old: InfiniteData<MessageListResponse> | undefined) => {
+          if (!old || old.pages.length === 0) return old
+          return {
+            ...old,
+            pages: old.pages.map((page, i) => {
+              if (i > 0) return page
+              if (page.messages.some(m => m.id === msg.id)) return page
+              return { ...page, messages: [...page.messages, msg] }
+            }),
+          }
+        })
         return
       }
     }
@@ -100,6 +156,17 @@ export function useConversationMessages(
     if (messages.value.some(m => m.id === msg.id)) return
 
     messages.value = [...messages.value, msg]
+
+    queryClient.setQueryData(queryKey.value, (old: InfiniteData<MessageListResponse> | undefined) => {
+      if (!old || old.pages.length === 0) return old
+      const firstPage = old.pages[0]!
+      if (firstPage.messages.some(m => m.id === msg.id)) return old
+      return {
+        ...old,
+        pages: [{ ...firstPage, messages: [...firstPage.messages, msg] }, ...old.pages.slice(1)],
+        pageParams: old.pageParams,
+      }
+    })
   }
 
   watch(
@@ -107,7 +174,7 @@ export function useConversationMessages(
     (newId, oldId) => {
       pendingSends.clear()
       if (newId && newId !== oldId) {
-        loadMessages()
+        messages.value = []
       }
     },
   )

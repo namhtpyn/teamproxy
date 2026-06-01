@@ -1,13 +1,17 @@
 import { z } from 'zod'
+import type { z as zod } from 'zod'
 import { ORPCError, eventIterator, getEventMeta, withEventMeta } from '@orpc/server'
 import { consola } from 'consola'
 import { authed } from '../middleware/auth'
-import { createGraphClient, graphRequest } from '../../ms-graph/graph-client'
+import { graphRequest } from '../../ms-graph/graph-client'
+import type { createGraphClient } from '../../ms-graph/graph-client'
 import type { Chat as GraphChat, ChatMessage } from '@microsoft/microsoft-graph-types'
 import { getEventPublisher, messageEventSchema, visibilityEventSchema, respondEventSchema, disconnectEventSchema } from '../../utils/event-bus'
 import { getAllowedChats, getAllowedChat } from '../../utils/allowed-chats'
 import { prefetchMessageImages } from '../../utils/image-cache'
 import { getCachedMsUser, setCachedMsUser } from '../../utils/ms-user-cache'
+
+type GraphClient = NonNullable<ReturnType<typeof createGraphClient>>
 
 function requireReadAccess(chatId: string) {
   const chatAccess = getAllowedChat(chatId)
@@ -25,6 +29,26 @@ function requireWriteAccess(chatId: string) {
   return chatAccess
 }
 
+function chatWriteAction<T extends { chatId: string }>(
+  inputSchema: zod.ZodType<T>,
+  fn: (client: GraphClient, input: T) => Promise<void>,
+) {
+  return authed.input(inputSchema).handler(async ({ input, context: { graphClient } }) => {
+    requireWriteAccess(input.chatId)
+    await fn(graphClient!, input)
+  })
+}
+
+function chatReadAction<T extends { chatId: string }>(
+  inputSchema: zod.ZodType<T>,
+  fn: (client: GraphClient, input: T) => Promise<void>,
+) {
+  return authed.input(inputSchema).handler(async ({ input, context: { graphClient } }) => {
+    requireReadAccess(input.chatId)
+    await fn(graphClient!, input)
+  })
+}
+
 function createLiveHandler(schema: z.ZodTypeAny, type: string, label: string) {
   return authed.output(eventIterator(schema)).handler(async function* ({ signal, lastEventId }) {
     const publisher = getEventPublisher()
@@ -40,20 +64,54 @@ function createLiveHandler(schema: z.ZodTypeAny, type: string, label: string) {
   })
 }
 
+function prepareMessageContent(input: {
+  content: string
+  mentions?: Array<{ userId: string; displayName: string }>
+  hostedContents?: Array<{ temporaryId: string; contentBytes: string; contentType: string }>
+  replyToId?: string
+}) {
+  const graphMentions = input.mentions?.length
+    ? input.mentions.map((m, i) => ({
+        id: i,
+        mentionText: m.displayName,
+        mentioned: { user: { id: m.userId, displayName: m.displayName } },
+      }))
+    : undefined
+
+  const hasMentions = !!graphMentions?.length
+  const hasHostedContents = !!input.hostedContents?.length
+
+  const content = hasMentions
+    ? graphMentions!.reduce(
+        (c, m) => c.replace(`@${m.mentionText}`, `<at id="${m.id}">${m.mentionText}</at>`),
+        input.content,
+      )
+    : input.content
+
+  const useReplyWithQuote = !!input.replyToId && !hasHostedContents && !hasMentions
+
+  return {
+    body: { contentType: 'html' as const, content },
+    mentions: graphMentions,
+    hostedContents: hasHostedContents ? input.hostedContents : undefined,
+    useReplyWithQuote,
+    replyToId: input.replyToId,
+  }
+}
+
 export const chatsRouter = {
-  getMe: authed.handler(async ({ context: { accessToken } }) => {
-    const client = createGraphClient({ accessToken })
-    const me = await client.getMe()
+  getMe: authed.handler(async ({ context: { graphClient } }) => {
+    const me = await graphClient!.getMe()
     setCachedMsUser({ id: me.id, displayName: me.displayName })
     return { id: me.id, displayName: me.displayName }
   }),
 
-  list: authed.handler(async ({ context: { accessToken } }) => {
+  list: authed.handler(async ({ context: { graphClient } }) => {
     const allowed = getAllowedChats()
     if (allowed.length === 0) return { chats: [] }
 
     const allowedMap = new Map(allowed.map((r) => [r.chatId, r]))
-    const client = createGraphClient({ accessToken })
+    const client = graphClient!
 
     const BATCH_SIZE = 20
     const chatIds = allowed.map((r) => r.chatId)
@@ -94,10 +152,10 @@ export const chatsRouter = {
         nextLink: z.string().url().optional(),
       }),
     )
-    .handler(async ({ input, context: { accessToken } }) => {
+    .handler(async ({ input, context: { accessToken, graphClient } }) => {
       requireReadAccess(input.chatId)
 
-      const client = createGraphClient({ accessToken })
+      const client = graphClient!
       let messages: ChatMessage[]
       let nextLink: string | undefined
 
@@ -154,39 +212,14 @@ export const chatsRouter = {
           .optional(),
       }),
     )
-    .handler(async ({ input, context: { accessToken } }) => {
+    .handler(async ({ input, context: { graphClient } }) => {
       requireWriteAccess(input.chatId)
+      const client = graphClient!
+      const prepared = prepareMessageContent(input)
 
-      const client = createGraphClient({ accessToken })
-
-      const mentions = input.mentions?.length
-        ? input.mentions.map((m, i) => ({
-            id: i,
-            mentionText: m.displayName,
-            mentioned: {
-              user: {
-                id: m.userId,
-                displayName: m.displayName,
-              },
-            },
-          }))
-        : undefined
-
-      const hasMentions = !!mentions?.length
-      const hasHostedContents = !!input.hostedContents?.length
-      const content = hasMentions
-        ? mentions.reduce(
-            (c, m) => c.replace(`@${m.mentionText}`, `<at id="${m.id}">${m.mentionText}</at>`),
-            input.content,
-          )
-        : input.content
-      const contentType = 'html'
-
-      const hostedContents = hasHostedContents ? input.hostedContents : undefined
-
-      const response = input.replyToId && !hasHostedContents && !hasMentions
-        ? await client.chats.replyWithQuote(input.chatId, input.replyToId, { contentType, content })
-        : await client.chats.send(input.chatId, { contentType, content }, undefined, mentions, hostedContents)
+      const response = prepared.useReplyWithQuote
+        ? await client.chats.replyWithQuote(input.chatId, prepared.replyToId!, prepared.body)
+        : await client.chats.send(input.chatId, prepared.body, undefined, prepared.mentions, prepared.hostedContents)
 
       if (!response) throw new ORPCError('INTERNAL', { message: 'Failed to send message' })
       return { message: response }
@@ -199,9 +232,9 @@ export const chatsRouter = {
         messageId: z.string(),
       }),
     )
-    .handler(async ({ input, context: { accessToken } }) => {
+    .handler(async ({ input, context: { graphClient } }) => {
       requireWriteAccess(input.chatId)
-      const client = createGraphClient({ accessToken })
+      const client = graphClient!
       let me = getCachedMsUser()
       if (!me) {
         const graphMe = await client.getMe()
@@ -211,76 +244,32 @@ export const chatsRouter = {
       await client.chats.softDeleteMessage(me.id, input.chatId, input.messageId)
     }),
 
-  editMessage: authed
-    .input(
-      z.object({
-        chatId: z.string(),
-        messageId: z.string(),
-        content: z.string().max(4000),
-      }),
-    )
-    .handler(async ({ input, context: { accessToken } }) => {
-      requireWriteAccess(input.chatId)
-      const client = createGraphClient({ accessToken })
-      await client.chats.updateMessage(input.chatId, input.messageId, {
-        contentType: 'html',
-        content: input.content,
-      })
-    }),
+  editMessage: chatWriteAction(
+    z.object({ chatId: z.string(), messageId: z.string(), content: z.string().max(4000) }),
+    async (client, input) => {
+      await client.chats.updateMessage(input.chatId, input.messageId, { contentType: 'html', content: input.content })
+    },
+  ),
 
-  setReaction: authed
-    .input(
-      z.object({
-        chatId: z.string(),
-        messageId: z.string(),
-        reactionType: z.string(),
-      }),
-    )
-    .handler(async ({ input, context: { accessToken } }) => {
-      requireReadAccess(input.chatId)
-      const client = createGraphClient({ accessToken })
-      await client.chats.setReaction(input.chatId, input.messageId, input.reactionType)
-    }),
+  setReaction: chatReadAction(
+    z.object({ chatId: z.string(), messageId: z.string(), reactionType: z.string() }),
+    (client, input) => client.chats.setReaction(input.chatId, input.messageId, input.reactionType),
+  ),
 
-  unsetReaction: authed
-    .input(
-      z.object({
-        chatId: z.string(),
-        messageId: z.string(),
-        reactionType: z.string(),
-      }),
-    )
-    .handler(async ({ input, context: { accessToken } }) => {
-      requireReadAccess(input.chatId)
-      const client = createGraphClient({ accessToken })
-      await client.chats.unsetReaction(input.chatId, input.messageId, input.reactionType)
-    }),
+  unsetReaction: chatReadAction(
+    z.object({ chatId: z.string(), messageId: z.string(), reactionType: z.string() }),
+    (client, input) => client.chats.unsetReaction(input.chatId, input.messageId, input.reactionType),
+  ),
 
-  pinMessage: authed
-    .input(
-      z.object({
-        chatId: z.string(),
-        messageId: z.string(),
-      }),
-    )
-    .handler(async ({ input, context: { accessToken } }) => {
-      requireWriteAccess(input.chatId)
-      const client = createGraphClient({ accessToken })
-      await client.chats.pinMessage(input.chatId, input.messageId)
-    }),
+  pinMessage: chatWriteAction(
+    z.object({ chatId: z.string(), messageId: z.string() }),
+    (client, input) => client.chats.pinMessage(input.chatId, input.messageId),
+  ),
 
-  unpinMessage: authed
-    .input(
-      z.object({
-        chatId: z.string(),
-        messageId: z.string(),
-      }),
-    )
-    .handler(async ({ input, context: { accessToken } }) => {
-      requireWriteAccess(input.chatId)
-      const client = createGraphClient({ accessToken })
-      await client.chats.unpinMessage(input.chatId, input.messageId)
-    }),
+  unpinMessage: chatWriteAction(
+    z.object({ chatId: z.string(), messageId: z.string() }),
+    (client, input) => client.chats.unpinMessage(input.chatId, input.messageId),
+  ),
 
   liveMessages: authed.output(eventIterator(messageEventSchema)).handler(async function* ({
     context,

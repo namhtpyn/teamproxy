@@ -1,6 +1,7 @@
 import { ORPCError } from '@orpc/server'
 import { base } from '../context'
 import { getActiveToken } from '../../db/get-active-token'
+import { createGraphClient } from '../../ms-graph/graph-client'
 import type { Database } from '../../db/client'
 import type { UserRole } from '#shared/utils/enums'
 
@@ -22,7 +23,8 @@ const requireSession = base.middleware(async ({ context: { username }, next }) =
 function resolveTokenWithRole(role: UserRole) {
   return base.middleware(async ({ context, next }) => {
     const token = resolveActiveToken(context.db)
-    return next({ context: { username: context.username!, accessToken: token.accessToken, role: context.role ?? role } })
+    const graphClient = createGraphClient({ accessToken: token.accessToken })
+    return next({ context: { username: context.username!, accessToken: token.accessToken, graphClient, role: context.role ?? role } })
   })
 }
 

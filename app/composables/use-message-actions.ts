@@ -1,7 +1,7 @@
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { Ref } from 'vue'
 import type { Chat, OptimisticChatMessage } from '~/types/chat'
-import { optimisticSend } from './use-optimistic-update'
+import { useMutation } from '@tanstack/vue-query'
 
 type MessageItem = ChatMessage | OptimisticChatMessage
 
@@ -12,13 +12,52 @@ export function useMessageActions(
   messageListRef: Ref<{ scrollToBottom: (force?: boolean) => void; isNearBottom: boolean } | null>,
   msUserId: () => string | null | undefined,
 ) {
-  const { $orpcClient: $orpc } = useNuxtApp()
+  const { $orpcClient } = useNuxtApp()
   const { user } = useAuth()
   const toast = useToast()
 
   const replyingTo = ref<MessageItem | null>(null)
   const editingMessageId = ref<string | null>(null)
   const pinnedMessageIds = ref<string[]>([])
+
+  const sendMutation = useMutation({
+    mutationFn: (params: {
+      chatId: string
+      content: string
+      replyToId?: string
+      mentions?: Array<{ userId: string; displayName: string }>
+      hostedContents?: Array<{ temporaryId: string; contentBytes: string; contentType: string }>
+    }) => $orpcClient.chats.sendMessage(params),
+  })
+
+  function makeSendCallbacks(chatId: string, tempId: string) {
+    return {
+      onSuccess: ({ message: real }: { message: ChatMessage }) => {
+        if (chat()?.id !== chatId) return
+        if (!pendingSends.has(tempId)) return
+        pendingSends.delete(tempId)
+        const idx = messages.value.findIndex(m => m.id === tempId)
+        if (idx !== -1) {
+          const updated = [...messages.value]
+          updated[idx] = real as ChatMessage
+          messages.value = updated
+        }
+      },
+      onError: (err: unknown) => {
+        if (chat()?.id !== chatId) return
+        pendingSends.delete(tempId)
+        const failedIdx = messages.value.findIndex(m => m.id === tempId)
+        if (failedIdx !== -1) {
+          messages.value = messages.value.map(m =>
+            m.id === tempId
+              ? { ...m, sendFailed: getErrorMessage(err, 'Failed to send') } as OptimisticChatMessage
+              : m,
+          )
+        }
+        toast.add({ title: 'Failed to send message', description: getErrorMessage(err, 'Failed to send message'), color: 'error' })
+      },
+    }
+  }
 
   function handleSubmit(payload: { content: string; image: { contentBytes: string; contentType: string } | null; mentions: Array<{ userId: string; displayName: string }> | undefined; replyToId?: string; hostedContents?: Array<{ temporaryId: string; contentBytes: string; contentType: string }> }) {
     const c = chat()
@@ -28,34 +67,31 @@ export function useMessageActions(
     const tempId = `temp:${Date.now()}`
     const currentMsUserId = msUserId()
 
-    optimisticSend({
-      messages,
-      pendingSends,
-      chatId,
-      staleGuard: () => chat()?.id,
-      tempId,
-      prepareOptimistic: () => {
-        const optimisticMsg: OptimisticChatMessage = {
-          id: tempId,
-          messageType: 'message',
-          body: { content: payload.content, contentType: 'text' },
-          createdDateTime: new Date().toISOString(),
-          from: currentMsUserId && user.value
-            ? { user: { id: currentMsUserId, displayName: user.value.displayName ?? 'You' } }
-            : { user: { id: 'unknown', displayName: 'You' } },
-        }
-        messages.value = [...messages.value, optimisticMsg]
-        replyingTo.value = null
-        nextTick(() => messageListRef.value?.scrollToBottom(true))
-      },
-      sendCall: () => $orpc.chats.sendMessage({
+    pendingSends.add(tempId)
+
+    const optimisticMsg: OptimisticChatMessage = {
+      id: tempId,
+      messageType: 'message',
+      body: { content: payload.content, contentType: 'text' },
+      createdDateTime: new Date().toISOString(),
+      from: currentMsUserId && user.value
+        ? { user: { id: currentMsUserId, displayName: user.value.displayName ?? 'You' } }
+        : { user: { id: 'unknown', displayName: 'You' } },
+    }
+    messages.value = [...messages.value, optimisticMsg]
+    replyingTo.value = null
+    nextTick(() => messageListRef.value?.scrollToBottom(true))
+
+    sendMutation.mutate(
+      {
         chatId,
         content: payload.content,
         replyToId: payload.replyToId,
         mentions: payload.mentions,
         hostedContents: payload.hostedContents,
-      }),
-    })
+      },
+      makeSendCallbacks(chatId, tempId),
+    )
   }
 
   function retryMessage(tempId: string) {
@@ -71,19 +107,15 @@ export function useMessageActions(
 
     const content = failedMsg.body?.content ?? ''
 
-    optimisticSend({
-      messages,
-      pendingSends,
-      chatId,
-      staleGuard: () => chat()?.id,
-      tempId,
-      prepareOptimistic: () => {
-        messages.value = messages.value.map(m =>
-          m.id === tempId ? { ...m, sendFailed: undefined } as OptimisticChatMessage : m,
-        )
-      },
-      sendCall: () => $orpc.chats.sendMessage({ chatId, content }),
-    })
+    pendingSends.add(tempId)
+    messages.value = messages.value.map(m =>
+      m.id === tempId ? { ...m, sendFailed: undefined } as OptimisticChatMessage : m,
+    )
+
+    sendMutation.mutate(
+      { chatId, content },
+      makeSendCallbacks(chatId, tempId),
+    )
   }
 
   async function handleReaction({ messageId, reactionType }: { messageId: string; reactionType: string }) {
@@ -110,11 +142,9 @@ export function useMessageActions(
     let newReactions: typeof originalReactions
 
     if (sameReaction) {
-      // Toggle off: remove this reaction
       const filtered = msg.reactions?.filter(r => r !== sameReaction)
       newReactions = filtered?.length ? filtered : undefined
     } else {
-      // Adding new: remove previous reaction first (Graph replaces)
       const filtered = (prevReaction
         ? msg.reactions?.filter(r => r !== prevReaction)
         : msg.reactions) ?? []
@@ -129,12 +159,11 @@ export function useMessageActions(
 
     try {
       if (sameReaction) {
-        await $orpc.chats.unsetReaction({ chatId, messageId, reactionType })
+        await $orpcClient.chats.unsetReaction({ chatId, messageId, reactionType })
       } else {
-        await $orpc.chats.setReaction({ chatId, messageId, reactionType })
+        await $orpcClient.chats.setReaction({ chatId, messageId, reactionType })
       }
     } catch (err: unknown) {
-      // Roll back optimistic mutation
       messages.value = messages.value.map(m => m.id === messageId ? { ...m, reactions: originalReactions } : m)
       console.error('[handleReaction] API call failed:', err, { chatId, messageId, reactionType })
     }
@@ -168,7 +197,7 @@ export function useMessageActions(
 
     editingMessageId.value = null
 
-    $orpc.chats.editMessage({ chatId, messageId, content }).catch((err: unknown) => {
+    $orpcClient.chats.editMessage({ chatId, messageId, content }).catch((err: unknown) => {
       const target = messages.value.find(m => m.id === messageId)
       if (target?.body) target.body.content = oldContent
       toast.add({ title: 'Failed to edit message', description: getErrorMessage(err, 'Failed to edit'), color: 'error' })
@@ -192,7 +221,7 @@ export function useMessageActions(
     if (msg.body) msg.body.content = ''
     ;(msg as Record<string, unknown>).deletedDateTime = new Date().toISOString()
 
-    $orpc.chats.deleteMessage({ chatId, messageId }).catch((err: unknown) => {
+    $orpcClient.chats.deleteMessage({ chatId, messageId }).catch((err: unknown) => {
       const target = messages.value.find(m => m.id === messageId)
       if (target) {
         if (target.body) target.body.content = oldContent
@@ -209,7 +238,7 @@ export function useMessageActions(
 
     pinnedMessageIds.value = [...pinnedMessageIds.value, messageId]
 
-    $orpc.chats.pinMessage({ chatId, messageId }).catch((err: unknown) => {
+    $orpcClient.chats.pinMessage({ chatId, messageId }).catch((err: unknown) => {
       pinnedMessageIds.value = pinnedMessageIds.value.filter(id => id !== messageId)
       toast.add({ title: 'Failed to pin message', description: getErrorMessage(err, 'Failed to pin'), color: 'error' })
     })
@@ -222,7 +251,7 @@ export function useMessageActions(
 
     pinnedMessageIds.value = pinnedMessageIds.value.filter(id => id !== messageId)
 
-    $orpc.chats.unpinMessage({ chatId, messageId }).catch((err: unknown) => {
+    $orpcClient.chats.unpinMessage({ chatId, messageId }).catch((err: unknown) => {
       pinnedMessageIds.value = [...pinnedMessageIds.value, messageId]
       toast.add({ title: 'Failed to unpin message', description: getErrorMessage(err, 'Failed to unpin'), color: 'error' })
     })
