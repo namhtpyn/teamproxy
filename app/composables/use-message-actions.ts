@@ -1,6 +1,7 @@
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { Ref } from 'vue'
 import type { Chat, OptimisticChatMessage } from '~/types/chat'
+import { optimisticSend } from './use-optimistic-update'
 
 type MessageItem = ChatMessage | OptimisticChatMessage
 
@@ -25,48 +26,35 @@ export function useMessageActions(
 
     const chatId = c.id!
     const tempId = `temp:${Date.now()}`
-    pendingSends.add(tempId)
-
     const currentMsUserId = msUserId()
-    const optimisticMsg: OptimisticChatMessage = {
-      id: tempId,
-      messageType: 'message',
-      body: { content: payload.content, contentType: 'text' },
-      createdDateTime: new Date().toISOString(),
-      from: currentMsUserId && user.value
-        ? { user: { id: currentMsUserId, displayName: user.value.displayName ?? 'You' } }
-        : { user: { id: 'unknown', displayName: 'You' } },
-    }
 
-    messages.value = [...messages.value, optimisticMsg]
-    replyingTo.value = null
-    nextTick(() => messageListRef.value?.scrollToBottom(true))
-
-    $orpc.chats.sendMessage({
+    optimisticSend({
+      messages,
+      pendingSends,
       chatId,
-      content: payload.content,
-      replyToId: payload.replyToId,
-      mentions: payload.mentions,
-      hostedContents: payload.hostedContents,
-    }).then(({ message: real }) => {
-      if (chat()?.id !== chatId) return
-      if (!pendingSends.has(tempId)) return
-      pendingSends.delete(tempId)
-
-      const idx = messages.value.findIndex(m => m.id === tempId)
-      if (idx !== -1) {
-        const updated = [...messages.value]
-        updated[idx] = real as ChatMessage
-        messages.value = updated
-      }
-    }).catch((err: unknown) => {
-      if (chat()?.id !== chatId) return
-      pendingSends.delete(tempId)
-      const failedIdx = messages.value.findIndex(m => m.id === tempId)
-      if (failedIdx !== -1) {
-        messages.value = messages.value.map(m => m.id === tempId ? { ...m, sendFailed: getErrorMessage(err, 'Failed to send') } as OptimisticChatMessage : m)
-      }
-      toast.add({ title: 'Failed to send message', description: getErrorMessage(err, 'Failed to send message'), color: 'error' })
+      staleGuard: () => chat()?.id,
+      tempId,
+      prepareOptimistic: () => {
+        const optimisticMsg: OptimisticChatMessage = {
+          id: tempId,
+          messageType: 'message',
+          body: { content: payload.content, contentType: 'text' },
+          createdDateTime: new Date().toISOString(),
+          from: currentMsUserId && user.value
+            ? { user: { id: currentMsUserId, displayName: user.value.displayName ?? 'You' } }
+            : { user: { id: 'unknown', displayName: 'You' } },
+        }
+        messages.value = [...messages.value, optimisticMsg]
+        replyingTo.value = null
+        nextTick(() => messageListRef.value?.scrollToBottom(true))
+      },
+      sendCall: () => $orpc.chats.sendMessage({
+        chatId,
+        content: payload.content,
+        replyToId: payload.replyToId,
+        mentions: payload.mentions,
+        hostedContents: payload.hostedContents,
+      }),
     })
   }
 
@@ -82,28 +70,19 @@ export function useMessageActions(
     if (!failedMsg.sendFailed) return
 
     const content = failedMsg.body?.content ?? ''
-    pendingSends.add(tempId)
-    messages.value = messages.value.map(m => m.id === tempId ? { ...m, sendFailed: undefined } as OptimisticChatMessage : m)
 
-    $orpc.chats.sendMessage({
+    optimisticSend({
+      messages,
+      pendingSends,
       chatId,
-      content,
-    }).then(({ message: real }) => {
-      if (chat()?.id !== chatId) return
-      if (!pendingSends.has(tempId)) return
-      pendingSends.delete(tempId)
-
-      const replaceIdx = messages.value.findIndex(m => m.id === tempId)
-      if (replaceIdx !== -1) {
-        const updated = [...messages.value]
-        updated[replaceIdx] = real as ChatMessage
-        messages.value = updated
-      }
-    }).catch((err: unknown) => {
-      if (chat()?.id !== chatId) return
-      pendingSends.delete(tempId)
-      messages.value = messages.value.map(m => m.id === tempId ? { ...m, sendFailed: getErrorMessage(err, 'Failed to send') } as OptimisticChatMessage : m)
-      toast.add({ title: 'Failed to send message', description: getErrorMessage(err, 'Failed to send message'), color: 'error' })
+      staleGuard: () => chat()?.id,
+      tempId,
+      prepareOptimistic: () => {
+        messages.value = messages.value.map(m =>
+          m.id === tempId ? { ...m, sendFailed: undefined } as OptimisticChatMessage : m,
+        )
+      },
+      sendCall: () => $orpc.chats.sendMessage({ chatId, content }),
     })
   }
 

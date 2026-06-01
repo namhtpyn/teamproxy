@@ -1,29 +1,7 @@
-import type { Chat as GraphChat, ChatMessage } from '@microsoft/microsoft-graph-types'
-import type { MessageContentType, MessageType, SubscriptionStatus } from '#shared/utils/enums'
+export type { ChatMember, LastMessagePreview, OptimisticChatMessage } from '#shared/types'
+export type { ChatListItem as Chat } from '#shared/types'
+export type { VisibilityChat } from '#shared/types'
+import type { VisibilityChat } from '#shared/types'
 
-export interface ChatMember {
-  id: string
-  displayName: string
-  userId: string | null
-  email: string | null
-}
-
-export interface LastMessagePreview {
-  id: string
-  createdDateTime: string
-  messageType: MessageType
-  contentType: MessageContentType
-  content: string
-  senderDisplayName: string | null
-}
-
-/** Client-side Chat type: raw Graph Chat + canRespond */
-export type Chat = GraphChat & { canRespond: boolean }
-
-/** Optimistic message extension */
-export type OptimisticChatMessage = ChatMessage & { sendFailed?: string }
-
-/** Visibility table row: raw Graph Chat + admin fields */
-export type VisibilityChat = Chat & { allowed: boolean; subscriptionStatus: SubscriptionStatus }
-
+/** Client-computed name field for visibility table rows */
 export type VisibilityChatRow = VisibilityChat & { name: string }

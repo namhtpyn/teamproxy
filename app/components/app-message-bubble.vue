@@ -2,6 +2,7 @@
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { ContextMenuItem } from '@nuxt/ui'
 import type { OptimisticChatMessage, ChatMember } from '~/types/chat'
+import { CHAT_EDITOR_STARTER_KIT, REPLY_EDITOR_UI } from '~/utils/editor-config'
 import DOMPurify from 'dompurify'
 import { getEventDetail, getMessageContent, getSender, groupReactions } from '~/utils/graph-helpers'
 import { onClickOutside } from '@vueuse/core'
@@ -208,20 +209,6 @@ onClickOutside(pickerRef, () => {
 
 const messageTime = computed(() => formatMessageTime(props.msg.createdDateTime ?? ''))
 
-const editEditorUi = {
-  root: 'rounded-lg border border-default bg-elevated overflow-hidden',
-  content: 'relative min-h-[32px] max-h-[100px] overflow-y-auto',
-  base: 'w-full outline-none px-2.5 py-1.5 text-sm *:m-0 [&_p]:leading-5 [&_.mention]:text-primary [&_.mention]:font-medium [&_img]:max-h-[80px] [&_img]:rounded [&_img]:inline selection:bg-primary/20',
-}
-
-const editStarterKit = {
-  blockquote: false as const,
-  codeBlock: false as const,
-  heading: false as const,
-  bulletList: false as const,
-  orderedList: false as const,
-}
-
 const editEditorProps = {
   handleKeyDown: handleEditKeydown,
 }
@@ -288,10 +275,10 @@ const mentionItems = computed(() =>
               <UEditor
                 v-model="editDraft"
                 content-type="html"
-                :starter-kit="editStarterKit"
+                :starter-kit="CHAT_EDITOR_STARTER_KIT"
                 :editor-props="editEditorProps"
                 :image="{ inline: true, allowBase64: true }"
-                :ui="editEditorUi"
+                :ui="REPLY_EDITOR_UI"
               >
                 <template #default="{ editor }">
                   <!-- Capture editor instance from slot prop — standard Vue workaround for binding slot props to local variables -->

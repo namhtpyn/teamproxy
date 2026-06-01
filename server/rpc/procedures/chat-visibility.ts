@@ -45,6 +45,27 @@ async function createSubscriptionOrFail(chatId: string, accessToken: string) {
   }
 }
 
+function enrichChatsWithVisibility(chats: Chat[]) {
+  const sorted = chats
+    .filter(c => c.lastUpdatedDateTime)
+    .sort((a, b) => new Date(b.lastUpdatedDateTime!).getTime() - new Date(a.lastUpdatedDateTime!).getTime())
+
+  const rows = db.query.allowedChats.findMany().sync()
+  const rowMap = new Map(rows.map(r => [r.chatId, r]))
+
+  return {
+    chats: sorted.map(c => {
+      const row = rowMap.get(c.id!)
+      return {
+        ...c,
+        allowed: row?.allowed ?? false,
+        canRespond: row?.canRespond ?? false,
+        subscriptionStatus: getMsSubscriptionStatus(row),
+      }
+    }),
+  }
+}
+
 export const chatVisibilityRouter = {
   getVisibility: adminAuthed
     .input(
@@ -112,25 +133,8 @@ export const chatVisibilityRouter = {
           }
         }
 
-        const sorted = merged
-          .filter((c) => c.lastUpdatedDateTime)
-          .sort((a, b) => new Date(b.lastUpdatedDateTime!).getTime() - new Date(a.lastUpdatedDateTime!).getTime())
-
-        const rows = db.query.allowedChats.findMany().sync()
-        const rowMap = new Map(rows.map((r) => [r.chatId, r]))
-
-        return {
-          chats: sorted.map((c) => {
-            const row = rowMap.get(c.id!)
-            return {
-              ...c,
-              allowed: row?.allowed ?? false,
-              canRespond: row?.canRespond ?? false,
-              subscriptionStatus: getMsSubscriptionStatus(row),
-            }
-          }),
-          nextCursor: undefined,
-        }
+        const enriched = enrichChatsWithVisibility(merged)
+        return { chats: enriched.chats, nextCursor: undefined }
       }
 
       let value: Chat[]
@@ -155,25 +159,8 @@ export const chatVisibilityRouter = {
         nextLink = page.nextLink
       }
 
-      const sorted = value
-        .filter((c) => c.lastUpdatedDateTime)
-        .sort((a, b) => new Date(b.lastUpdatedDateTime!).getTime() - new Date(a.lastUpdatedDateTime!).getTime())
-
-      const rows = db.query.allowedChats.findMany().sync()
-      const rowMap = new Map(rows.map((r) => [r.chatId, r]))
-
-      return {
-        chats: sorted.map((c) => {
-          const row = rowMap.get(c.id!)
-          return {
-            ...c,
-            allowed: row?.allowed ?? false,
-            canRespond: row?.canRespond ?? false,
-            subscriptionStatus: getMsSubscriptionStatus(row),
-          }
-        }),
-        nextCursor: nextLink ?? undefined,
-      }
+      const enriched = enrichChatsWithVisibility(value)
+      return { chats: enriched.chats, nextCursor: nextLink ?? undefined }
     }),
 
   setVisibility: adminAuthed

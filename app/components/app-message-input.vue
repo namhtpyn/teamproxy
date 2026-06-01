@@ -2,6 +2,7 @@
 import type { Editor } from '@tiptap/vue-3'
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { ChatMember, OptimisticChatMessage } from '~/types/chat'
+import { CHAT_EDITOR_STARTER_KIT, CHAT_EDITOR_UI } from '~/utils/editor-config'
 
 const props = withDefaults(defineProps<{
   chatId: string
@@ -119,20 +120,6 @@ function handleEditorPaste(_view: unknown, event: ClipboardEvent) {
   return false
 }
 
-const editorUi = {
-  root: 'rounded-lg border border-default bg-elevated overflow-hidden',
-  content: 'relative min-h-[38px] max-h-[120px] overflow-y-auto',
-  base: 'w-full outline-none px-3 py-2.5 text-sm *:m-0 [&_p]:leading-6 [&_.mention]:text-primary [&_.mention]:font-medium [&_img]:max-h-[80px] [&_img]:rounded [&_img]:inline selection:bg-primary/20',
-}
-
-const editorStarterKit = {
-  blockquote: false as const,
-  codeBlock: false as const,
-  heading: false as const,
-  bulletList: false as const,
-  orderedList: false as const,
-}
-
 const editorPropsConfig = {
   handleKeyDown: handleEditorKeydown,
   handlePaste: handleEditorPaste,
@@ -188,10 +175,10 @@ watch(() => props.chatId, () => {
             v-model="editorContent"
             content-type="html"
             placeholder="Type a message..."
-            :starter-kit="editorStarterKit"
+            :starter-kit="CHAT_EDITOR_STARTER_KIT"
             :editor-props="editorPropsConfig"
             :image="{ inline: true, allowBase64: true }"
-            :ui="editorUi"
+            :ui="CHAT_EDITOR_UI"
           >
             <template #default="{ editor }">
               <!-- Capture editor instance from slot prop — standard Vue workaround for binding slot props to local variables -->
