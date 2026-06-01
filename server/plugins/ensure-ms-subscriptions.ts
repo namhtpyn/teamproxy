@@ -1,6 +1,6 @@
 import { consola } from 'consola'
 import { setWebhookOrigin } from '../utils/webhook-origin'
-import { ensureMsSubscriptions } from '../utils/ensure-ms-subscriptions'
+import { ensureMsSubscriptions } from '../utils/subscriptions/ensure-ms-subscriptions'
 
 export default defineNitroPlugin((nitroApp) => {
   let initialEnsureTriggered = false

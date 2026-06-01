@@ -1,6 +1,6 @@
 import { consola } from 'consola'
-import { createGraphClient } from '../ms-graph/graph-client'
-import { liveEventSchema, getEventPublisher } from './event-bus'
+import { createGraphClient } from '../../ms-graph/graph-client'
+import { liveEventSchema, getEventPublisher } from '../event-bus'
 import { updateLastMessageAt } from './ms-subscription-store'
 
 export async function backfillMissedMessages(

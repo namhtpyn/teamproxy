@@ -3,7 +3,7 @@ import { lt } from 'drizzle-orm'
 import { db } from '../../db/client'
 import { oauthTokens } from '../../db/schema'
 import { exchangeToken } from '../../ms-graph/token-exchange'
-import { ensureMsSubscriptions } from '../../utils/ensure-ms-subscriptions'
+import { ensureMsSubscriptions } from '../../utils/subscriptions/ensure-ms-subscriptions'
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)

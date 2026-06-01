@@ -1,5 +1,5 @@
-import { db } from '../db/client'
-import { allowedChats } from '../db/schema'
+import { db } from '../../db/client'
+import { allowedChats } from '../../db/schema'
 import { eq, inArray, and, isNotNull } from 'drizzle-orm'
 
 export type MsSubscribedChat = {

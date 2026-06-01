@@ -1,5 +1,5 @@
 import { consola } from 'consola'
-import { ensureMsSubscriptions } from '../utils/ensure-ms-subscriptions'
+import { ensureMsSubscriptions } from '../utils/subscriptions/ensure-ms-subscriptions'
 
 export default defineTask({
   meta: {

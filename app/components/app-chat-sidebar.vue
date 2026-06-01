@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import type { Chat } from '~/types/chat'
-import { useAsyncState } from '@vueuse/core'
 import { getLastMessagePreview, getLastMessageReadDateTime } from '~/utils/graph-helpers'
-
-const { $orpcClient: $orpc } = useNuxtApp()
 
 const emit = defineEmits<{
   'select-chat': [chat: Chat]
@@ -13,18 +10,7 @@ const props = defineProps<{
   selectedChatId?: string | null
 }>()
 
-const { msUserId, ensure: ensureMsUser } = useMsUser()
-
-const { state: chats, isLoading: chatsLoading, error: chatsError, execute: fetchChats } = useAsyncState(
-  async () => {
-    const [chatList] = await Promise.all([
-      $orpc.chats.list().then(r => r.chats),
-      ensureMsUser(),
-    ])
-    return chatList
-  },
-  [] as Chat[],
-)
+const { chats, loading: chatsLoading, error: chatsError, fetchChats, msUserId } = useChatStore()
 
 function checkUnread(chat: Chat) {
   const preview = getLastMessagePreview(chat)
@@ -49,6 +35,10 @@ const sortedChats = computed(() =>
 function handleSelect(chat: Chat) {
   emit('select-chat', chat)
 }
+
+onMounted(() => {
+  if (chats.value.length === 0) fetchChats()
+})
 
 defineExpose({ chats, fetchChats })
 </script>

@@ -5,6 +5,8 @@ import { useQueryClient } from '@tanstack/vue-query'
 const { user, isAuthenticated, isAdmin, logout } = useAuth()
 const queryClient = useQueryClient()
 
+useChatStore()
+
 const userInitial = computed(() => user.value?.displayName?.charAt(0)?.toUpperCase() ?? '')
 const userDisplayName = computed(() => user.value?.displayName ?? '')
 

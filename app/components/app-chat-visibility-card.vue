@@ -1,75 +1,38 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
 import type { VisibilityChat, VisibilityChatRow } from '~/types/chat'
-import { useAsyncState, watchDebounced } from '@vueuse/core'
 import { getChatType } from '~/utils/graph-helpers'
 import { getChatDisplayName } from '~/utils/chat-helpers'
 
 const { $orpcClient: $orpc } = useNuxtApp()
 const toast = useToast()
 
-const PAGE_SIZE = 10
-
 const togglingId = ref<string | null>(null)
 const allowedTogglingId = ref<string | null>(null)
 const { msUserId, ensure: ensureMsUser } = useMsUser()
-const currentCursor = ref<string | undefined>(undefined)
-const nextCursor = ref<string | undefined>(undefined)
-const pageCursors = ref<(string | undefined)[]>([undefined])
-const pageIndex = ref(0)
-const search = ref('')
 
-const { state: chats, isLoading: loading, error, execute: fetchPage } = useAsyncState(
-  async () => {
-    const searchValue = search.value.trim() || undefined
+const {
+  items: chats,
+  loading,
+  error,
+  search,
+  isSearchActive,
+  hasMore,
+  hasPrev,
+  pageIndex,
+  goNext,
+  goPrev,
+  refresh,
+} = useCursorPagination<VisibilityChat>({
+  pageSize: 10,
+  fetchFn: async ({ cursor, limit, search }) => {
     const [result] = await Promise.all([
-      $orpc.chatVisibility.getVisibility({
-        limit: PAGE_SIZE,
-        cursor: searchValue ? undefined : currentCursor.value,
-        search: searchValue,
-      }),
+      $orpc.chatVisibility.getVisibility({ limit, cursor, search }),
       ensureMsUser(),
     ])
-    nextCursor.value = result.nextCursor
-    return result.chats
+    return { items: result.chats, nextCursor: result.nextCursor }
   },
-  [] as VisibilityChat[],
-)
-
-const isSearchActive = computed(() => search.value.trim().length > 0)
-
-watchDebounced(search, () => {
-  currentCursor.value = undefined
-  pageIndex.value = 0
-  pageCursors.value = [undefined]
-  fetchPage()
-}, { debounce: 300 })
-
-const hasMore = computed(() => !isSearchActive.value && nextCursor.value !== undefined)
-const hasPrev = computed(() => !isSearchActive.value && pageIndex.value > 0)
-
-async function goNext() {
-  if (!nextCursor.value) return
-  pageCursors.value.push(nextCursor.value)
-  pageIndex.value++
-  currentCursor.value = nextCursor.value
-  await fetchPage()
-}
-
-async function goPrev() {
-  if (pageIndex.value === 0) return
-  pageIndex.value--
-  currentCursor.value = pageCursors.value[pageIndex.value]
-  await fetchPage()
-}
-
-function refresh() {
-  search.value = ''
-  currentCursor.value = undefined
-  pageIndex.value = 0
-  pageCursors.value = [undefined]
-  fetchPage()
-}
+})
 
 const allowedCount = computed(() => chats.value.filter((c) => c.allowed).length)
 

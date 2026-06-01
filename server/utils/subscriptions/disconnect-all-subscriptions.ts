@@ -1,7 +1,7 @@
 import { consola } from 'consola'
-import { db } from '../db/client'
-import { getActiveToken } from '../db/get-active-token'
-import { createGraphClient } from '../ms-graph/graph-client'
+import { db } from '../../db/client'
+import { getActiveToken } from '../../db/get-active-token'
+import { createGraphClient } from '../../ms-graph/graph-client'
 import { getMsSubscribedChats, clearMsSubscription } from './ms-subscription-store'
 
 export async function disconnectAllSubscriptions(): Promise<void> {

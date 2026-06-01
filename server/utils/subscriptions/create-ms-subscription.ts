@@ -1,8 +1,8 @@
 import { consola } from 'consola'
-import { createGraphClient } from '../ms-graph/graph-client'
+import { createGraphClient } from '../../ms-graph/graph-client'
 import { updateMsSubscription } from './ms-subscription-store'
-import { computeExpiration } from './compute-expiration'
-import { getWebhookOrigin } from './webhook-origin'
+import { computeExpiration } from '../compute-expiration'
+import { getWebhookOrigin } from '../webhook-origin'
 
 export async function createMsSubscription(
   chatId: string,

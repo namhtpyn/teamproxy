@@ -1,5 +1,5 @@
 import { authed } from '../middleware/auth'
-import { getMsSubscribedChats } from '../../utils/ms-subscription-store'
+import { getMsSubscribedChats } from '../../utils/subscriptions/ms-subscription-store'
 
 export const subscriptionsRouter = {
   list: authed.handler(async () => {

@@ -16,21 +16,17 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 
-const selectedChatId = ref<string | null>(null)
+const { chats, selectedChatId, fetchChats } = useChatStore()
 const currentChat = ref<Chat | null>(null)
 const { images: lightboxImages, index: lightboxIndex, visible: lightboxVisible, close: closeLightbox } = useLightbox()
 const conversationPanel = ref<{ refreshMessages: () => Promise<void>; appendIncomingMessage: (data: Record<string, unknown> | null) => void; isNearBottom: boolean } | null>(null)
-const chatSidebar = ref<{ chats: Chat[]; fetchChats: () => Promise<void> } | null>(null)
 
-// --- Live event subscriptions ---
 const liveMessageEvent = useLiveEvent('liveMessages')
-const liveVisibilityEvent = useLiveEvent('liveVisibility')
-const liveRespondEvent = useLiveEvent('liveRespond')
 const liveDisconnectEvent = useLiveEvent('liveDisconnect')
 
 function updateSidebarChat(chatId: string, raw: Record<string, unknown> | null) {
-  if (!chatSidebar.value?.chats || !raw) return
-  const chat = chatSidebar.value.chats.find(c => c.id === chatId)
+  if (!raw) return
+  const chat = chats.value.find(c => c.id === chatId)
   if (!chat) return
 
   const msg = raw as ChatMessage
@@ -58,39 +54,15 @@ function updateSidebarChat(chatId: string, raw: Record<string, unknown> | null) 
   }
 }
 
-function handleVisibilityChange(chatId: string, allowed: boolean) {
-  if (!chatSidebar.value?.chats) return
-  const chats = chatSidebar.value.chats
-
-  if (!allowed) {
-    const idx = chats.findIndex(c => c.id === chatId)
-    if (idx !== -1) chats.splice(idx, 1)
-    if (chatId === selectedChatId.value) {
-      selectedChatId.value = null
-      currentChat.value = null
-      router.replace({ query: {} })
-    }
-  } else {
-    chatSidebar.value.fetchChats()
-  }
-}
-
-function handleRespondChange(chatId: string, canRespond: boolean) {
-  if (!chatSidebar.value?.chats) return
-  const chat = chatSidebar.value.chats.find(c => c.id === chatId)
-  if (chat) chat.canRespond = canRespond
-}
-
 function markSelectedChatAsRead() {
-  if (!selectedChatId.value || !chatSidebar.value?.chats) return
+  if (!selectedChatId.value) return
   if (!conversationPanel.value?.isNearBottom) return
-  const chat = chatSidebar.value.chats.find(c => c.id === selectedChatId.value)
+  const chat = chats.value.find(c => c.id === selectedChatId.value)
   const preview = getLastMessagePreview(chat!)
   if (!chat || !preview) return
   setLastMessageReadDateTime(chat, preview.createdDateTime)
 }
 
-// --- Watchers for live events ---
 whenever(liveMessageEvent, (event) => {
   updateSidebarChat(event.chatId, event.data)
   if (event.chatId === selectedChatId.value) {
@@ -98,15 +70,7 @@ whenever(liveMessageEvent, (event) => {
   }
 })
 
-whenever(liveVisibilityEvent, (event) => {
-  handleVisibilityChange(event.chatId, event.data.allowed)
-})
-
-whenever(liveRespondEvent, (event) => {
-  handleRespondChange(event.chatId, event.data.canRespond)
-})
-
-whenever(liveDisconnectEvent, (event) => {
+whenever(liveDisconnectEvent, () => {
   toast.add({
     title: 'Teams connection is offline. Chats show last-known messages.',
     color: 'warning',
@@ -120,7 +84,14 @@ watch(
   () => markSelectedChatAsRead(),
 )
 
-// --- Navigation ---
+watch(selectedChatId, (newId, oldId) => {
+  closeLightbox()
+  if (newId === null && oldId !== null) {
+    currentChat.value = null
+    router.replace({ query: {} })
+  }
+})
+
 function goBack() {
   selectedChatId.value = null
   currentChat.value = null
@@ -133,29 +104,26 @@ function selectChat(chat: Chat) {
 }
 
 onMounted(() => {
+  fetchChats()
   restoreFromQuery()
 })
 
 function restoreFromQuery() {
   const chatId = route.query.chat as string | undefined
   if (!chatId) return
-  const chat = chatSidebar.value?.chats?.find(c => c.id === chatId)
+  const chat = chats.value.find(c => c.id === chatId)
   if (chat) { selectChat(chat); return }
   watch(
-    () => chatSidebar.value?.chats.length,
+    () => chats.value.length,
     (len) => {
       if (len) {
-        const found = chatSidebar.value?.chats?.find(c => c.id === chatId)
+        const found = chats.value.find(c => c.id === chatId)
         if (found) selectChat(found)
       }
     },
     { once: true },
   )
 }
-
-watch(selectedChatId, () => {
-  closeLightbox()
-})
 </script>
 
 <template>
@@ -170,7 +138,6 @@ watch(selectedChatId, () => {
 
     <div v-else class="flex h-full">
       <AppChatSidebar
-        ref="chatSidebar"
         :selected-chat-id="selectedChatId"
         :class="selectedChatId ? 'hidden md:flex' : 'flex'"
         class="w-full flex-shrink-0 border-r border-default bg-default md:w-80"

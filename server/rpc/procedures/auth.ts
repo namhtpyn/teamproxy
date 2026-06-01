@@ -8,7 +8,7 @@ import { oauthTokens } from '../../db/schema'
 import { MS_SCOPE_STRING } from '../../ms-graph/scopes'
 import { getActiveToken } from '../../db/get-active-token'
 import { createGraphClient } from '../../ms-graph/graph-client'
-import { disconnectAllSubscriptions } from '../../utils/disconnect-all-subscriptions'
+import { disconnectAllSubscriptions } from '../../utils/subscriptions/disconnect-all-subscriptions'
 import { getEventPublisher } from '../../utils/event-bus'
 
 const DISCONNECTED = { connected: false as const, accountInfo: null, accessTokenExpiresAt: null, refreshTokenExpiresAt: null }

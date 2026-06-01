@@ -6,7 +6,7 @@ import { createGraphClient } from '../../ms-graph/graph-client'
 import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import { liveEventSchema, getEventPublisher } from '../../utils/event-bus'
 import { prefetchMessageImages } from '../../utils/image-cache'
-import { getMsSubscriptionsByClientStates, updateLastMessageAt } from '../../utils/ms-subscription-store'
+import { getMsSubscriptionsByClientStates, updateLastMessageAt } from '../../utils/subscriptions/ms-subscription-store'
 
 // MS Graph resource format: OData chats('id')/messages('id') or REST /chats/id/messages/id
 const CHAT_ID_REGEX = /(?:\/users\/[^/]+)?\/?chats\(?['"]?([^'")\s/]+)['"]?\)?\/messages/
