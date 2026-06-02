@@ -1,5 +1,7 @@
+import type { ChatMessage } from '@microsoft/microsoft-graph-types'
 import type { Chat } from '~/types/chat'
 import { whenever } from '@vueuse/core'
+import { getSender } from '~/utils/graph-helpers'
 
 export function useChatStore() {
   const { $orpcClient } = useNuxtApp()
@@ -12,6 +14,9 @@ export function useChatStore() {
 
   const liveVisibilityEvent = useLiveEvent('liveVisibility')
   const liveRespondEvent = useLiveEvent('liveRespond')
+  const liveMessageEvent = useLiveEvent('liveMessages')
+
+  const { notifyNewMessage, incrementUnread, requestPermission, isSupported, permissionGranted } = useChatNotification()
 
   const handlersRegistered = useState<boolean>('chat-store:sse-registered', () => false)
 
@@ -32,6 +37,21 @@ export function useChatStore() {
     whenever(liveRespondEvent, (event) => {
       const chat = chats.value.find(c => c.id === event.chatId)
       if (chat) chat.canRespond = event.data.canRespond
+    })
+
+    whenever(liveMessageEvent, (event) => {
+      const msg = event.data as ChatMessage | null
+      if (!msg || msg.messageType !== 'message') return
+      if (event.chatId === selectedChatId.value) return
+
+      const sender = getSender(msg)
+      const chatName = chats.value.find(c => c.id === event.chatId)?.topic ?? null
+      const body = msg.body?.content ?? ''
+
+      if (sender) {
+        notifyNewMessage(event.chatId, sender.displayName, body, chatName)
+      }
+      incrementUnread()
     })
   }
 
@@ -58,5 +78,8 @@ export function useChatStore() {
     selectedChatId,
     fetchChats,
     msUserId,
+    requestPermission,
+    isSupported,
+    permissionGranted,
   }
 }

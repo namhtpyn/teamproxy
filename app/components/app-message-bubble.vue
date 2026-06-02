@@ -32,7 +32,9 @@ const emit = defineEmits<{
 
 const sender = computed(() => getSender(props.msg))
 const isOwn = computed(() => !!msUserId.value && sender.value?.id === msUserId.value)
-const isSending = computed(() => props.msg.id?.startsWith('temp:') && !('sendFailed' in props.msg && props.msg.sendFailed))
+const isSending = computed(
+  () => props.msg.id?.startsWith('temp:') && !('sendFailed' in props.msg && props.msg.sendFailed),
+)
 const isSystemEvent = computed(() => !!getEventDetail(props.msg))
 const systemEventInfo = computed(() => getSystemEventInfo(getEventDetail(props.msg)))
 const isDeleted = computed(() => !!(props.msg as Record<string, unknown>).deletedDateTime)
@@ -42,11 +44,14 @@ const content = computed(() => getMessageContent(props.msg))
 const editDraft = ref('')
 const editEditorRef = shallowRef<import('@tiptap/vue-3').Editor | null>(null)
 
-watch(() => props.editing, (isEditing) => {
-  if (isEditing) {
-    editDraft.value = proxyGraphImageUrls(content.value)
-  }
-})
+watch(
+  () => props.editing,
+  (isEditing) => {
+    if (isEditing) {
+      editDraft.value = proxyGraphImageUrls(content.value)
+    }
+  },
+)
 
 function handleEditKeydown(_view: unknown, event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey) {
@@ -101,28 +106,36 @@ function handleContentClick(e: MouseEvent) {
   const allImgs = Array.from(contentEl.querySelectorAll<HTMLImageElement>('img.inline-chat-img'))
   const idx = allImgs.indexOf(target as HTMLImageElement)
   if (idx === -1) return
-  const urls = allImgs.map(img => img.src)
+  const urls = allImgs.map((img) => img.src)
   open(urls, idx)
 }
 
 const sendFailed = computed(() => ('sendFailed' in props.msg ? props.msg.sendFailed : undefined))
 
-const reactionGroups = computed(() => groupReactions(props.msg.reactions ?? undefined, msUserId.value))
+const reactionGroups = computed(() =>
+  groupReactions(props.msg.reactions ?? undefined, msUserId.value),
+)
 const showReactionPicker = ref(false)
-const canReact = computed(() => !isSystemEvent.value && !isSending.value && !props.msg.id?.startsWith('temp:'))
+const canReact = computed(
+  () => !isSystemEvent.value && !isSending.value && !props.msg.id?.startsWith('temp:'),
+)
 
 const contextItems = computed(() => {
   const items: ContextMenuItem[][] = []
 
   const actions = [
     { label: 'Reply', icon: 'i-lucide-reply', onSelect: () => emit('reply', props.msg.id!) },
-    { label: 'React', icon: 'i-lucide-smile-plus', onSelect: () => { showReactionPicker.value = true } },
+    {
+      label: 'React',
+      icon: 'i-lucide-smile-plus',
+      onSelect: () => {
+        showReactionPicker.value = true
+      },
+    },
   ]
   items.push(actions)
 
-  items.push([
-    { label: 'Copy message', icon: 'i-lucide-copy', onSelect: () => copyMessage() },
-  ])
+  items.push([{ label: 'Copy message', icon: 'i-lucide-copy', onSelect: () => copyMessage() }])
 
   items.push([
     props.pinned
@@ -133,7 +146,12 @@ const contextItems = computed(() => {
   if (isOwn.value && !isSending.value && !isSystemEvent.value) {
     items.push([
       { label: 'Edit', icon: 'i-lucide-pencil', onSelect: () => emit('edit', props.msg.id!) },
-      { label: 'Delete', icon: 'i-lucide-trash-2', color: 'error', onSelect: () => emit('delete', props.msg.id!) },
+      {
+        label: 'Delete',
+        icon: 'i-lucide-trash-2',
+        color: 'error',
+        onSelect: () => emit('delete', props.msg.id!),
+      },
     ])
   }
 
@@ -150,7 +168,9 @@ async function copyMessage() {
   try {
     const htmlBlob = new Blob([html], { type: 'text/html' })
     const textBlob = new Blob([text], { type: 'text/plain' })
-    await navigator.clipboard.write([new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })])
+    await navigator.clipboard.write([
+      new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob }),
+    ])
     toast.add({ title: 'Copied!', color: 'success' })
   } catch {
     toast.add({ title: 'Failed to copy message', color: 'error' })
@@ -177,15 +197,18 @@ const mentionAppendTo = () => document.body
 
 const mentionItems = computed(() =>
   (props.members ?? [])
-    .filter((m): m is ChatMember & { userId: string } => m.userId != null && m.userId !== msUserId.value)
-    .map(m => ({ label: m.displayName, id: m.userId })),
+    .filter(
+      (m): m is ChatMember & { userId: string } => m.userId != null && m.userId !== msUserId.value,
+    )
+    .map((m) => ({ label: m.displayName, id: m.userId })),
 )
-
 </script>
 
 <template>
   <div v-if="isSystemEvent && systemEventInfo" class="flex justify-center">
-    <div class="flex items-center gap-1.5 rounded-full bg-elevated/50 px-3 py-1 text-xs text-dimmed">
+    <div
+      class="flex items-center gap-1.5 rounded-full bg-elevated/50 px-3 py-1 text-xs text-dimmed"
+    >
       <span>{{ messageTime }}</span>
       <span>·</span>
       <span>{{ systemEventInfo.text }}</span>
@@ -195,18 +218,19 @@ const mentionItems = computed(() =>
         target="_blank"
         rel="noopener noreferrer"
         class="font-medium text-primary hover:underline"
-      >{{ systemEventInfo.link.label }}</a>
+        >{{ systemEventInfo.link.label }}</a
+      >
     </div>
   </div>
 
-  <UContextMenu v-else :items="contextItems" :disabled="isSystemEvent || isSending || editing || isDeleted">
+  <UContextMenu
+    v-else
+    :items="contextItems"
+    :disabled="isSystemEvent || isSending || editing || isDeleted"
+  >
     <div :class="isOwn ? 'flex justify-end' : 'flex justify-start'">
       <div :class="isOwn ? 'max-w-[70%]' : 'flex max-w-[70%] items-start gap-2'">
-        <UAvatar
-          v-if="!isOwn"
-          size="2xs"
-          class="mt-1 flex-shrink-0"
-        >
+        <UAvatar v-if="!isOwn" size="2xs" class="mt-1 flex-shrink-0">
           {{ sender?.displayName?.charAt(0)?.toUpperCase() ?? '?' }}
         </UAvatar>
 
@@ -223,7 +247,16 @@ const mentionItems = computed(() =>
             </span>
           </div>
 
-          <div class="relative rounded-2xl px-3.5 py-2" :class="sendFailed ? 'bg-red-500/15 ring-1 ring-red-500/30' : isOwn ? 'bg-accented' : 'bg-elevated'">
+          <div
+            class="relative rounded-2xl px-3.5 py-2"
+            :class="
+              sendFailed
+                ? 'bg-red-500/15 ring-1 ring-red-500/30'
+                : isOwn
+                  ? 'bg-accented'
+                  : 'bg-elevated'
+            "
+          >
             <div v-if="pinned" class="absolute -top-1 -right-1">
               <UIcon name="i-lucide-pin" class="h-3 w-3 text-dimmed" />
             </div>
@@ -242,8 +275,19 @@ const mentionItems = computed(() =>
               >
                 <template #default="{ editor }">
                   <!-- Capture editor instance from slot prop — standard Vue workaround for binding slot props to local variables -->
-                  <Component :is="() => { editEditorRef = editor; return null }" />
-                  <UEditorMentionMenu :editor="editor" :items="mentionItems" :append-to="mentionAppendTo" />
+                  <Component
+                    :is="
+                      () => {
+                        editEditorRef = editor
+                        return null
+                      }
+                    "
+                  />
+                  <UEditorMentionMenu
+                    :editor="editor"
+                    :items="mentionItems"
+                    :append-to="mentionAppendTo"
+                  />
                 </template>
               </UEditor>
               <div class="mt-1.5 flex items-center justify-end gap-1">
@@ -263,19 +307,35 @@ const mentionItems = computed(() =>
                 />
               </div>
             </template>
-            <p v-else-if="isDeleted" class="italic text-sm text-dimmed">This message has been deleted.</p>
-            <div v-else-if="hasRenderedContent" data-message-content class="break-words text-sm leading-relaxed text-highlighted" v-html="renderedContent" @click="handleContentClick" @error="handleImageError" />
+            <p v-else-if="isDeleted" class="italic text-sm text-dimmed">
+              This message has been deleted.
+            </p>
+            <div
+              v-else-if="hasRenderedContent"
+              data-message-content
+              class="break-words text-sm leading-relaxed text-highlighted overflow-x-auto"
+              v-html="renderedContent"
+              @click="handleContentClick"
+              @error="handleImageError"
+            />
           </div>
 
-          <div v-if="!isDeleted && (reactionGroups.length || canReact)" ref="pickerRef" class="relative -mt-1.5 mb-1 flex items-center gap-0.5" :class="isOwn ? 'justify-end' : ''">
+          <div
+            v-if="!isDeleted && (reactionGroups.length || canReact)"
+            ref="pickerRef"
+            class="relative -mt-1.5 mb-1 flex items-center gap-0.5"
+            :class="isOwn ? 'justify-end' : ''"
+          >
             <button
               v-for="group in reactionGroups"
               :key="group.reactionType"
               type="button"
               class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-colors"
-              :class="group.hasOwn
-                ? 'bg-primary/15 text-primary'
-                : 'bg-elevated text-dimmed hover:bg-elevated/80'"
+              :class="
+                group.hasOwn
+                  ? 'bg-primary/15 text-primary'
+                  : 'bg-elevated text-dimmed hover:bg-elevated/80'
+              "
               @click="toggleReaction(group.reactionType)"
             >
               <span class="text-[13px] leading-none">{{ group.emoji }}</span>
@@ -289,10 +349,7 @@ const mentionItems = computed(() =>
             >
               <UIcon name="i-lucide-smile-plus" class="h-3.5 w-3.5" />
             </button>
-            <AppReactionPicker
-              :visible="showReactionPicker"
-              @select="toggleReaction"
-            />
+            <AppReactionPicker :visible="showReactionPicker" @select="toggleReaction" />
           </div>
 
           <div v-if="isSending" class="mt-1 flex items-center justify-end gap-1">
@@ -302,7 +359,9 @@ const mentionItems = computed(() =>
           <template v-else-if="sendFailed">
             <div v-if="isOwn" class="mt-1 flex items-center justify-end gap-2">
               <p class="text-xs text-error">{{ sendFailed }}</p>
-              <button class="text-xs font-medium text-error underline" @click="emit('retry')">Retry</button>
+              <button class="text-xs font-medium text-error underline" @click="emit('retry')">
+                Retry
+              </button>
             </div>
             <p v-else class="mt-1 text-xs text-red-400">{{ sendFailed }}</p>
           </template>

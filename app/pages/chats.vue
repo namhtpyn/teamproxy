@@ -16,7 +16,7 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 
-const { chats, selectedChatId, fetchChats } = useChatStore()
+const { chats, selectedChatId, fetchChats, requestPermission, isSupported, permissionGranted } = useChatStore()
 const currentChat = ref<Chat | null>(null)
 const { images: lightboxImages, index: lightboxIndex, visible: lightboxVisible, close: closeLightbox } = useLightbox()
 const conversationPanel = ref<{ refreshMessages: () => Promise<void>; appendIncomingMessage: (data: Record<string, unknown> | null) => void; isNearBottom: boolean } | null>(null)
@@ -106,6 +106,9 @@ function selectChat(chat: Chat) {
 onMounted(() => {
   fetchChats()
   restoreFromQuery()
+  if (isSupported.value && !permissionGranted.value) {
+    requestPermission()
+  }
 })
 
 function restoreFromQuery() {
